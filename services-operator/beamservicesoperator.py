@@ -77,7 +77,6 @@ def create_job(body, spec, jar_id):
                    message="Could not run job, server returned:\n" +
                    response.content.decode("utf-8"))
         return None
-        raise kopf.TemporaryError("Jar execution failed.", delay=60)
     job_id = response.json().get("jobid")
     kopf.info(body, reason="Job created", message=f"Job id: {job_id}")
     return job_id
