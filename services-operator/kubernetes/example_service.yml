@@ -2,7 +2,7 @@
 apiVersion: oisp.org/v1
 kind: BeamService
 metadata:
-  name: my-beam-service
+  name: beam-service
 spec:
   entryClass: "org.oisp.services.ComponentSplitter"
   args: "--runner=FlinkRunner --streaming=true"

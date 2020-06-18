@@ -1,4 +1,4 @@
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: beamservices.oisp.org
@@ -9,6 +9,24 @@ spec:
     - name: v1
       served: true
       storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                entryClass:
+                  type: string
+                args:
+                  type: string
+                url:
+                  type: string
+                jarId:
+                  type: string
+                jobId:
+                  type: string
+#          required: ["spec.entryClass", "spec.args", "spec.url"]
   names:
     kind: BeamService
     plural: beamservices
