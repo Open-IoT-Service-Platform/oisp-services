@@ -19,7 +19,7 @@ spec:
                 entryClass:
                   type: string
                 args:
-                  type: string
+                  type: object
                 url:
                   type: string
                 jarId:

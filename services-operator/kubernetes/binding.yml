@@ -11,4 +11,4 @@ subjects:
     name: beamservices-operator
     # TODO decide which namespaces the operator
     # should be deployed in
-    namespace: default
+    namespace: oisp

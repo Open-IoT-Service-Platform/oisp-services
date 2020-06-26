@@ -5,5 +5,7 @@ metadata:
   name: beam-service
 spec:
   entryClass: "org.oisp.services.ComponentSplitter"
-  args: "--runner=FlinkRunner --streaming=true"
+  args:
+    runner: FlinkRunner
+    streaming: "true"
   url: "https://arkocal.rocks/csb.jar"
