@@ -3,21 +3,9 @@ import os
 
 import base64
 
-example_config = ("""{{"application_name": "rule_engine_dashboard",
-          "dashboard_strict_ssl": false,
-          "dashboard_url": "http://{config[frontendUri]}"),
-          "kafka_servers": "{config[kafkaConfig][uri]}",
-          "kafka_zookeeper_quorum": "{config[zookeeperConfig][zkCluster]}" ,
-          "kafka_observations_topic": "{config[kafkaConfig][topicsObservations]}",
-          "kafka_rule_engine_topic": "{config[kafkaConfig][topicsRuleEngine]}",
-          "kafka_heartbeat_topic": "{config[kafkaConfig][topicsHeartbeatName]}",
-          "kafka_heartbeat_interval": "{config[kafkaConfig][topicsHeartbeatInterval]}",
-          "hadoop_security_authentication": "{config[hbaseConfig"[hadoopProperties][hadoop.security.authentication]}",
-          "hbase_table_prefix": "local",
-          "token": token,
-          "zookeeper_hbase_quorum": "{config[zookeeperConfig][zkCluster].split(":")[0]}"
-          }}""")
+import oisp
 
+FRONTEND_URL = "http://frontend:4001/v1/api"
 
 def load_config_from_env(varname, seen_keys=None):
     """Read OISP config, which is an extended JSON format
@@ -41,9 +29,23 @@ config["ruleEngineConfig"] = load_config_from_env("OISP_RULEENGINE_CONFIG")
 config["kafkaConfig"] = load_config_from_env("OISP_KAFKA_CONFIG")
 config["zookeeperConfig"] = load_config_from_env("OISP_ZOOKEEPER_CONFIG")
 
+def get_tokens(users):
+    """Given a list of dictionaries consisting of keys
+    'user', 'password'; return a dictionary user->token."""
+    tokens = {}
+    for user_data in users:        
+        client = oisp.Client(FRONTEND_URL)
+        client.auth(user_data["user"], user_data["password"])
+        tokens[user_data["user"]] = client.get_user_token().value
+    return tokens
 
-def format_template(string, encode=None):
-    result = string.format(**globals())
+def format_template(string, tokens=None, encode=None):
+    if tokens is None:
+        tokens = {}
+    format_values = {"config": config,
+                     "tokens": tokens}
+    
+    result = string.format(**format_values)
     if encode == "base64":
         result = base64.b64encode(result.encode("utf-8")).decode("utf-8")
     else:

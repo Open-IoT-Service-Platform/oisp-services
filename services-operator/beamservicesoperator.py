@@ -12,16 +12,15 @@ FLINK_URL = "http://flink-jobmanager-rest.oisp:8081"
 
 @kopf.on.create("oisp.org", "v1", "beamservices")
 def create(body, spec, **kwargs):
-    kopf.info(body, reason="Creating", message="Creating beamservices")
+    kopf.info(body, reason="Creating", message="Creating beamservices"+str(spec))
     return {"createdOn": str(time.time())}
 
 # TODO make this async
-
-
 @kopf.timer("oisp.org", "v1", "beamservices", interval=1)
 def updates(stopped, patch, logger, body, spec, status, **kwargs):
     update_status = status.get("updates")
     if update_status is None:
+        kopf.info(body, reason="Status None", message="Status is none")
         return {"deployed": False, "jobCreated": False, "jobStatus": {}}
     if not update_status.get("deployed"):
         jar_id = deploy(body, spec)
@@ -39,7 +38,10 @@ def updates(stopped, patch, logger, body, spec, status, **kwargs):
 
 @kopf.on.delete("oisp.org", "v1", "beamservices")
 def delete(body, **kwargs):
-    update_status = body["status"].get("updates")
+    try:
+        update_status = body["status"].get("updates")
+    except KeyError:
+        return
     if not update_status:
         return
     if update_status.get("jobId"):
@@ -77,7 +79,7 @@ def deploy(body, spec):
     return jar_id
 
 
-def build_args(args_dict):
+def build_args(args_dict, tokens):
     args_str = ""
     for key, val in args_dict.items():
         if isinstance(val, str):
@@ -85,14 +87,16 @@ def build_args(args_dict):
             continue
         assert isinstance(val, dict), "Values should be str or dict."
         assert "format" in val, "'format' is mandatory"
-        val = util.format_template(val["format"], encode=val.get("encode"))
+        val = util.format_template(val["format"], tokens=tokens, encode=val.get("encode"))
         args_str += f"--{key}={val} "
     return args_str
 
 
 def create_job(body, spec, jar_id):
     entry_class = spec["entryClass"]
-    args = build_args(spec["args"])
+    tokens = util.get_tokens(spec.get("tokens", []))
+    kopf.info(body, reason="Got tokens", message=str(tokens))
+    args = build_args(spec["args"], tokens)
     kopf.info(body, reason="Args Parsed",
               message=args)
     response = requests.post(f"{FLINK_URL}/jars/{jar_id}/run",

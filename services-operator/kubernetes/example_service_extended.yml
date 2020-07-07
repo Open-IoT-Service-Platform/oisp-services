@@ -5,6 +5,9 @@ metadata:
   name: rule-engine
 spec:
   entryClass: "org.oisp.RuleEngineBuild"
+  tokens:   
+  - user: "rule_engine@intel.com" # {{ .Values.ruleEngine.username }}
+    password: "oChLqExmi6RanAZlSFNn4QZNrjxYlr6u7jC6mgBVwv2GuCV6Y3mJH5rSPYdtUOCM" #{{ .Values.ruleEngine.password }}  
   args:
     runner: FlinkRunner
     streaming: "true"
@@ -20,35 +23,7 @@ spec:
         "kafka_heartbeat_topic": "{config[kafkaConfig][topicsHeartbeatName]}",
         "kafka_heartbeat_interval": "{config[kafkaConfig][topicsHeartbeatInterval]}",
         "zookeeper_hbase_quorum": "not used",
-        "token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJEZHBRalo4c0phenlmUVFOYnRmY3ZyMnc1S3E3cndPNUFza3J5UXc0UFI0In0.eyJqdGkiOiIxZDRiMWM0Zi1iYjc2LTQ4MjktYTg3My05NzllMTMyMDJmNzMiLCJleHAiOjE5MDgzNjgzNzksIm5iZiI6MCwiaWF0IjoxNTkzMDA4Mzc5LCJpc3MiOiJodHRwOi8va2V5Y2xvYWstaHR0cDo0MDgwL2tleWNsb2FrL3JlYWxtcy9PSVNQIiwiYXVkIjoibXF0dC1icm9rZXIiLCJzdWIiOiI4MmYyNmFmNi05OTQxLTRkYTUtYmZiNi01N2JjZThiNzhjODMiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJvaXNwLWZyb250ZW5kIiwiYXV0aF90aW1lIjowLCJzZXNzaW9uX3N0YXRlIjoiMWFlOGExM2EtMzg4Zi00YWNmLTlhZmMtYmJlZGVlZDc4NmVkIiwiYWNyIjoiMSIsInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJ1bWFfYXV0aG9yaXphdGlvbiJdfSwicmVzb3VyY2VfYWNjZXNzIjp7Im9pc3AtZnJvbnRlbmQiOnsicm9sZXMiOlsic3lzdGVtIl19fSwic2NvcGUiOiJvcGVuaWQgYWNjb3VudHMgbXF0dC1icm9rZXIgdHlwZSBlbWFpbCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJhY2NvdW50cyI6W10sInR5cGUiOiJ1c2VyIiwiZW1haWwiOiJydWxlX2VuZ2luZUBpbnRlbC5jb20ifQ.nWjgfv5X-sTX9YWq7QR5ban6OWQX34mxaR2FujbavYIRtZdrji9u_R2ldmtQqo99l99huPH884jkVHIvDCQ7miWKIBSlhMN-Xx8LCbshd3nnXA9rM1Z2Rnx7DY5Db2aqlvIUEBNfkt9cMbn5M6yrE8rRZnkDKtmk-eO_7qaz2C4Gnh3fp9XDCJsx8qRI4PaZ9Jpqw5S6iTyXnRqUngzbVTXU_jJMJ_mu1jWNJrfRgJfaUjeeG2VjUVoiN30jAmWQhqFVeL9Iyb_QM-TcH9PYSZoJGO77HKkWCYKLWIY7ReWbT5OGXSUasgjqsDaCUm3RBsTq7jJU8UgdVYE1IwV0Ag"
+        "token": "{tokens[rule_engine@intel.com]}"
         }}
       encode: base64
-#    - application_name:
-#        value: rule_engine_dashboard
-#    - dashboard_strict_ssl:
-#        value: "false"
-#    - dashboard_url:
-#        fromOisp: "frontendConfig.uri" # todo http must be added in app?
-#    - kafka_servers:
-#        fromOisp: "kafkaConfig.uri"
-#    - kafka_zookeeper:
-#        fromOisp: "zookeeperConfig.zkCluster"
-#    - kafka_observations_topic:
-#        fromOisp: "kafkaConfig.topicsObservations"
-#    - kafka_rule_engine_topic":
-#        fromOisp: "kafkaConfig.topicsRuleEngine"
-#    - kafka_heartbeat_topic:
-#        fromOisp: "kafkaConfig.topicsHeartbeatName"
-#    - kafka_heartbeat_interval:
-#        fromOisp: "kafkaConfig.topicsHeartbeatInterval"
-#    - hadoop_security_authentication:
-#        fromOisp: "hbaseConfig.hadoopProperties.hadoop.security.authentication"
-#    - hbase_table_prefix:
-#        value: local
-#    - zookeeper_hbase_quorum:
-#        fromOisp: "zookeeperConfig.zkCluster" # TODO split in app?
-#    - token:
-#        fromToken:
-#          username: "rule_engine_user"
-          # bypass password?
   url: "https://arkocal.rocks/re.jar"

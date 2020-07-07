@@ -1,4 +1,3 @@
-
 apiVersion: oisp.org/v1
 kind: BeamService
 metadata:
