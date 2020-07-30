@@ -7,4 +7,5 @@ spec:
   args:
     runner: FlinkRunner
     streaming: "true"
-  url: "https://arkocal.rocks/csb.jar"
+  package:
+    url: "https://arkocal.rocks/csb.jar"

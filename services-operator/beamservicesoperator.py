@@ -1,9 +1,10 @@
+import ftplib
+import time
+
 import kopf
 import kubernetes
 import requests
 import uuid
-
-import time
 
 import util
 
@@ -49,7 +50,7 @@ def delete(body, **kwargs):
             f"{FLINK_URL}/jobs/{update_status['jobId']}", params={"mode": "cancel"})
 
 
-def download_file(url):
+def download_file_via_http(url):
     """Download the file and return the saved path."""
     response = requests.get(url)
     path = "/tmp/" + str(uuid.uuid4()) + ".jar"
@@ -58,12 +59,31 @@ def download_file(url):
     return path
 
 
+def download_file_via_ftp(url, username, password):
+    local_path = "/tmp/" + str(uuid.uuid4()) + ".jar"
+    url_without_protocol = url[6:]
+    addr = url_without_protocol.split("/")[0]
+    remote_path = "/".join(url_without_protocol.split("/")[1:])
+    with open(local_path, "wb") as f:
+        with ftplib.FTP(addr, username, password) as ftp:
+            ftp.retrbinary(f"RETR {remote_path}", f.write)
+    return local_path
+
 def deploy(body, spec):
     # TODO Create schema for spec in CRD
-    url = spec["url"]
-    kopf.info(body, reason="Jar download started",
-              message=f"Downloadin from {url}")
-    jarfile_path = download_file(url)
+#    url = spec["url"]
+    package = spec["package"]
+    url = package["url"]
+    kopf.info(body, reason="Jar download",
+              message=f"Downloading from {url}")
+    if url.startswith("http"):
+        jarfile_path = download_file_via_http(url)
+    elif url.startswith("ftp"):
+        jarfile_path = download_file_via_ftp(url, package["username"], package["password"])
+    else:
+        kopf.error(body, reason="BeamDeploymentFailed",
+                   message="Invalid url (must start with http or ftp)")
+        raise kopf.PermanentError("Jar download failed")
     response = requests.post(
         f"{FLINK_URL}/jars/upload", files={"jarfile": open(jarfile_path, "rb")})
     if response.status_code != 200:
