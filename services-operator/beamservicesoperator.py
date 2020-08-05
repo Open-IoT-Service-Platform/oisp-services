@@ -1,3 +1,4 @@
+import os
 import ftplib
 import time
 
@@ -8,7 +9,8 @@ import uuid
 
 import util
 
-FLINK_URL = "http://flink-jobmanager-rest.oisp:8081"
+namespace = os.environ["OISP_NAMESPACE"]
+FLINK_URL = f"http://flink-jobmanager-rest.{namespace}:8081"
 
 
 @kopf.on.create("oisp.org", "v1", "beamservices")
