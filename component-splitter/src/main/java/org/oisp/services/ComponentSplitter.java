@@ -17,7 +17,6 @@ import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.commons.lang3.SerializationUtils;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -32,10 +31,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 
-public class ComponentSplitter {
+public abstract class ComponentSplitter {
 
     private static final String KAFKAURL = "oisp-kafka-headless:9092";
-    ;
 
     public static void main(String[] args) {
         PipelineOptions options = PipelineOptionsFactory.fromArgs(args).create();
@@ -103,7 +101,7 @@ public class ComponentSplitter {
                 .apply("FormatResults", MapElements.via(new SimpleFunction<KV<String, String>, ProducerRecord<Long, String>>() {
                 //.apply("FormatResults", MapElements.via(new SimpleFunction<String, ProducerRecord<Long, String>>() {
                     @Override
-                    public ProducerRecord<Long, String> apply(KV<String, String>input) {
+                    public ProducerRecord<Long, String> apply(KV<String, String> input) {
                         return new ProducerRecord<Long, String>(input.getKey(), 0L, input.getValue());
                     }
                 })).setCoder(new MyCustomCoder())
