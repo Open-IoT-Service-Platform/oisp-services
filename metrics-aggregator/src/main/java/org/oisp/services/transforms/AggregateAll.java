@@ -45,7 +45,7 @@ public class AggregateAll extends DoFn<KV<String, Iterable<Observation>>, Aggreg
         if (firstObs.isNumber()) {
             Long count = 0L;
             Double min = Double.MAX_VALUE;
-            Double max = Double.MIN_VALUE;
+            Double max = -Double.MAX_VALUE;
             Double accum = 0.0;
             for (Observation obs : itObs) {
                 Double value = Double.parseDouble(obs.getValue());
