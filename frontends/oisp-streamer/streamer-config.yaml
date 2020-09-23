@@ -1,0 +1,15 @@
+apiVersion: v1
+
+kind: ConfigMap
+metadata:
+  name: streamer-config
+
+
+data:
+  streamer: |
+    {
+    "kafkaConfig": "@@OISP_KAFKA_CONFIG",
+    "keycloakConfig": "@@OISP_KEYCLOAK_CONFIG",
+    "hostname": "streamer",
+    "port": 9000
+    }
