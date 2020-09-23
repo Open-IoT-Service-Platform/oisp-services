@@ -1,0 +1,8 @@
+{
+  "realm": "OISP",
+  "bearer-only": true,
+  "auth-server-url": "http://keycloak-http:4080/keycloak/",
+  "ssl-required": "external",
+  "resource": "streamer",
+  "confidential-port": 0
+}
