@@ -7,4 +7,7 @@ ADD keycloak.json keycloak.json
 
 EXPOSE 9000
 
+RUN adduser -D nodeuser
+USER nodeuser
+
 CMD ["node", "streamer.js"]
