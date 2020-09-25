@@ -72,10 +72,10 @@ wss.on('connection', function connection(ws) {
 		const acc = accComp[0];
 		const comp = accComp[1];
 		if (!(validator.isUUID(acc) && validator.isUUID(comp))) {
-		    // TODO write down protocol
 		    ws.send('Invalid Input');
 		    ws.disconnect();
 		}
+		var topic = servicePrefix + "." + acc + "." + comp;
 		if (accounts.some((a) => {return a.id === acc})) {
 		    // TODO clear timing (only from now/last minute etc.)
 		    var newConsumer = kafka.consumer({groupId: uuid.v4()});
