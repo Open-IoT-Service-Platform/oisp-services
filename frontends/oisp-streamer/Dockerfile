@@ -1,4 +1,4 @@
-FROM node:8-alpine
+FROM node:10-alpine
 
 RUN npm install kafkajs validator ws keycloak-connect uuid winston
 ADD streamer.js streamer.js
