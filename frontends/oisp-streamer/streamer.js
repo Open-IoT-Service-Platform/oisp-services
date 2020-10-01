@@ -57,7 +57,7 @@ async function disconnectAll(wsId) {
 
 wss.on('connection', function connection(ws) {
     ws.id = uuid.v4();
-    ws.on('message', function incoming(message) {
+    ws.on('message', async function incoming(message) {
 	disconnectAll(ws.id);
 	wsKafkaConsumers[ws.id] = [];
 	const messageJson = JSON.parse(message);
@@ -68,7 +68,7 @@ wss.on('connection', function connection(ws) {
 	}
 	getAccessibleAccounts(messageJson.token).then((accounts) => {
 	    console.log("Accounts:" + accounts)
-	    messageJson.components.forEach( function (accComp) {
+	    messageJson.components.forEach( async function (accComp) {
 		const acc = accComp[0];
 		const comp = accComp[1];
 		if (!(validator.isUUID(acc) && validator.isUUID(comp))) {
@@ -79,7 +79,7 @@ wss.on('connection', function connection(ws) {
 		if (accounts.some((a) => {return a.id === acc})) {
 		    // TODO clear timing (only from now/last minute etc.)
 		    var newConsumer = kafka.consumer({groupId: uuid.v4()});
-		    newConsumer.connect();
+		    await newConsumer.connect();
 		    newConsumer.subscribe({topic: topic, fromBeginning:false});
 		    wsKafkaConsumers[ws.id].push(newConsumer);
 		    run(ws, newConsumer);
