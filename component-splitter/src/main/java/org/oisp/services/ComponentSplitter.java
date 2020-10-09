@@ -34,6 +34,7 @@ import java.io.OutputStream;
 public abstract class ComponentSplitter {
 
     private static final String KAFKAURL = "oisp-kafka-headless:9092";
+    private static final String CID = "cid";
 
     public static void main(String[] args) {
         PipelineOptions options = PipelineOptionsFactory.fromArgs(args).create();
@@ -67,32 +68,14 @@ public abstract class ComponentSplitter {
         )
                 .apply(Window.<KV<String, String>>into(FixedWindows.of(Duration.standardSeconds(1))))
                 .apply(Values.<String>create())
-                .apply("ExtractJsonObjects", ParDo.of(new DoFn<String, String>() {
-                    @ProcessElement
-                    public void processElement(ProcessContext c) {
-                        try {
-                            String input = (String) c.element();
-                            if (input.charAt(0) == '[') {
-                                System.out.println(input);
-                                JSONArray ja = new JSONArray(input);
-                                for (int i = 0; i < ja.length(); i++) {
-                                    c.output(ja.getJSONObject(i).toString());
-                                }
-                            } else {
-                                c.output(input);
-                            }
-                        } catch (JSONException e) {
-                            return;
-                        }
-                    }
-                }))
+                .apply("ExtractJsonObjects", ParDo.of(new JsonObjectExtractor()))
                 .apply("ExtractTopic", MapElements.via(new SimpleFunction<String, KV<String, String>>() {
                     @Override
                     public KV<String, String> apply(String input) {
                         //System.out.println(input)
                         JSONObject jo = new JSONObject(input);
                         String accountId = jo.getString("aid");
-                        String componentId = jo.getString("cid");
+                        String componentId = jo.getString(CID);
                         String topic = "metrics.".concat(accountId).concat(".").concat(componentId);
                         System.out.println(topic);
                         return KV.of(topic, jo.toString());
@@ -132,4 +115,30 @@ public abstract class ComponentSplitter {
         }
     }
 
+    private static class JsonObjectExtractor extends DoFn<String, String> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            try {
+                String input = (String) c.element();
+                if (input.charAt(0) == '[') {
+                    JSONArray ja = new JSONArray(input);
+                    for (int i = 0; i < ja.length(); i++) {
+                        try {
+                            JSONObject jo = ja.getJSONObject(i);
+                            String componentId = jo.getString(CID);
+                            if (!componentId.contains("aggregator")) { // Aggregated values are not supposed to be component-splitted.
+                                c.output(jo.toString());
+                            }
+                        } catch (JSONException e) {
+                            continue;
+                        }
+                    }
+                } else {
+                    c.output(input);
+                }
+            } catch (JSONException e) {
+                return;
+            }
+        }
+    }
 }
