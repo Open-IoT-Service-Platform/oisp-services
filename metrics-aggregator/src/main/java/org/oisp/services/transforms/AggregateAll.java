@@ -23,9 +23,13 @@ import org.apache.beam.sdk.values.KV;
 import org.oisp.services.collections.AggregatedObservation;
 import org.oisp.services.collections.Observation;
 import org.oisp.services.dataStructures.Aggregator;
+import org.oisp.services.utils.LogHelper;
+import org.slf4j.Logger;
 
 public class AggregateAll extends DoFn<KV<String, Iterable<Observation>>, AggregatedObservation> {
     private Aggregator aggregator;
+
+    private static final Logger LOG = LogHelper.getLogger(AggregateAll.class);
 
     public AggregateAll(Aggregator aggregator) {
         this.aggregator = aggregator;
@@ -48,7 +52,12 @@ public class AggregateAll extends DoFn<KV<String, Iterable<Observation>>, Aggreg
             Double max = -Double.MAX_VALUE;
             Double accum = 0.0;
             for (Observation obs : itObs) {
-                Double value = Double.parseDouble(obs.getValue());
+                Double value = 0.0;
+                try {
+                    value = Double.parseDouble(obs.getValue());
+                } catch (NumberFormatException error) {
+                    LOG.warn("Error: {}, cid: {} and value {} could not be parsed! ", error.getMessage(), firstObs.getCid(), obs.getValue());
+                }
                 accum += value;
                 if (value < min) {
                     min = value;
