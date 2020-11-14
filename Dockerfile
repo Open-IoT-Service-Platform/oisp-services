@@ -8,6 +8,7 @@
 #Build beam application and embedd in Spark container
 FROM maven:3.6.1-jdk-8-alpine AS rule-engine-builder
 
+
 RUN apk update && apk add build-base
 
 # Add and build rule engine
@@ -40,6 +41,7 @@ ADD component-splitter/checkstyle/checkstyle.xml /app/component-splitter/checkst
 RUN cd component-splitter && mvn clean package -Pflink-runner -DskipTests
 
 FROM httpd:2.4
+ENV METRICS_AGGREGATOR_VERSION=0.1.1
 COPY --from=rule-engine-builder /app/oisp-beam-rule-engine/target/rule-engine-bundled-0.1.jar /usr/local/apache2/htdocs/rule-engine-bundled-0.1.jar
-COPY --from=rule-engine-builder /app/metrics-aggregator/target/metrics-aggregator-bundled-0.1.jar /usr/local/apache2/htdocs/metrics-aggregator-bundled-0.1.jar
+COPY --from=rule-engine-builder /app/metrics-aggregator/target/metrics-aggregator-bundled-$METRICS_AGGREGATOR_VERSION.jar /usr/local/apache2/htdocs/metrics-aggregator-bundled-$METRICS_AGGREGATOR_VERSION.jar
 COPY --from=rule-engine-builder /app/component-splitter/target/component-splitter-bundled-0.1.jar /usr/local/apache2/htdocs/component-splitter-bundled-0.1.jar
