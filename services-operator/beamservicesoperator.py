@@ -1,22 +1,22 @@
 import os
 import ftplib
 import time
+import uuid
 
 import kopf
-import kubernetes
 import requests
-import uuid
 
 import util
 
 namespace = os.environ["OISP_NAMESPACE"]
 FLINK_URL = f"http://flink-jobmanager-rest.{namespace}:8081"
-
+JOB_STATUS_UNKNOWN = "UNKNOWN"
 
 @kopf.on.create("oisp.org", "v1", "beamservices")
 def create(body, spec, **kwargs):
     kopf.info(body, reason="Creating", message="Creating beamservices"+str(spec))
     return {"createdOn": str(time.time())}
+
 
 # TODO make this async
 @kopf.timer("oisp.org", "v1", "beamservices", interval=1)
@@ -34,8 +34,16 @@ def updates(stopped, patch, logger, body, spec, status, **kwargs):
             return {"jobCreated": True, "jobId": job_id}
         else:
             return
-    job_status = requests.get(
-        f"{FLINK_URL}/jobs/{update_status['jobId']}").json()
+    try:
+        job_status = requests.get(
+            f"{FLINK_URL}/jobs/{update_status['jobId']}").json()
+        errors = job_status.get("errors", [])
+        print(errors)
+        if f"Job {update_status['jobId']} not found" in errors:
+            kopf.info(body, reason="Job not found", message="Job not found, triggering redeploy.")
+            return {"deployed": False, "jobCreated": False, "jobStatus": {}, "redeployed": True}
+    except (ConnectionRefusedError, requests.ConnectionError):
+        return {"jobStatus": JOB_STATUS_UNKNOWN}
     return {"jobStatus": job_status}
 
 
