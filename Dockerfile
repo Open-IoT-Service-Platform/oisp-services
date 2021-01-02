@@ -13,15 +13,20 @@ RUN apk update && apk add build-base
 
 # Add and build rule engine
 # -------------------------
+
 RUN mkdir -p /app/oisp-beam-rule-engine
-ADD oisp-beam-rule-engine/pom.xml /app/oisp-beam-rule-engine/pom.xml
+ADD oisp-beam-rule-engine/pom*.xml /app/oisp-beam-rule-engine/
 RUN mkdir /app/oisp-beam-rule-engine/checkstyle
 ADD oisp-beam-rule-engine/checkstyle/checkstyle.xml /app/oisp-beam-rule-engine/checkstyle/checkstyle.xml
 ADD oisp-beam-rule-engine/src /app/oisp-beam-rule-engine/src
 
 WORKDIR /app
 
-RUN cd oisp-beam-rule-engine && mvn checkstyle:check pmd:check clean package -Pflink-runner  -DskipTests
+# In case there is a next version, put it into pom-next.xml file with an incremental version number, it will be built, too
+RUN cd oisp-beam-rule-engine && mvn checkstyle:check pmd:check clean package -Pflink-runner  -DskipTests && \
+    if [ -f pom-next.xml ]; \
+        then  mvn package -Pflink-runner  -DskipTests -f pom-next.xml; \
+    fi
 
 # Add and build metrics-aggregator
 # --------------------------------
@@ -35,13 +40,17 @@ RUN cd metrics-aggregator && mvn checkstyle:check clean package -Pflink-runner  
 
 # Add and build component-splitter
 # --------------------------------
-ADD component-splitter/pom.xml /app/component-splitter/pom.xml
+ADD component-splitter/pom*.xml /app/component-splitter/
 ADD component-splitter/src /app/component-splitter/src
 ADD component-splitter/checkstyle/checkstyle.xml /app/component-splitter/checkstyle/checkstyle.xml
-RUN cd component-splitter && mvn clean package -Pflink-runner -DskipTests
+RUN cd component-splitter && mvn clean package -Pflink-runner -DskipTests; \
+    if [ -f pom-next.xml ]; \
+        then  mvn package -Pflink-runner  -DskipTests -f pom-next.xml; \
+    fi
 
 FROM httpd:2.4
 ENV METRICS_AGGREGATOR_VERSION=0.1.1
-COPY --from=rule-engine-builder /app/oisp-beam-rule-engine/target/rule-engine-bundled-0.1.jar /usr/local/apache2/htdocs/rule-engine-bundled-0.1.jar
+
+COPY --from=rule-engine-builder /app/oisp-beam-rule-engine/target/rule-engine-bundled-*.jar /usr/local/apache2/htdocs/
 COPY --from=rule-engine-builder /app/metrics-aggregator/target/metrics-aggregator-bundled-$METRICS_AGGREGATOR_VERSION.jar /usr/local/apache2/htdocs/metrics-aggregator-bundled-$METRICS_AGGREGATOR_VERSION.jar
-COPY --from=rule-engine-builder /app/component-splitter/target/component-splitter-bundled-0.1.jar /usr/local/apache2/htdocs/component-splitter-bundled-0.1.jar
+COPY --from=rule-engine-builder /app/component-splitter/target/component-splitter-bundled-*.jar /usr/local/apache2/htdocs/
