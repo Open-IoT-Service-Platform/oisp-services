@@ -5,7 +5,7 @@ import base64
 
 import oisp
 
-FRONTEND_URL = "http://frontend:4001/v1/api"
+FRONTEND_URL = os.getenv("OISP_FRONTEND_SERVICE")  or "http://frontend:4001/v1/api"
 
 def load_config_from_env(varname, seen_keys=None):
     """Read OISP config, which is an extended JSON format
