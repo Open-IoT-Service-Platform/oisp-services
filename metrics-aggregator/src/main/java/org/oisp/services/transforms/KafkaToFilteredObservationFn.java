@@ -21,15 +21,16 @@ package org.oisp.services.transforms;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
-import org.oisp.services.collections.Observation;
+import org.oisp.services.collections.AggregatedObservation;
 import org.oisp.services.collections.ObservationList;
 import org.oisp.services.conf.Config;
+import org.oisp.services.dataStructures.Aggregator;
 
 import java.util.Map;
 
 // Distribute elements with cid key
 // Filter out already aggregated values
-public class KafkaToFilteredObservationFn extends DoFn<KafkaRecord<String, ObservationList>, KV<String, Observation>> {
+public class KafkaToFilteredObservationFn extends DoFn<KafkaRecord<String, ObservationList>, KV<String, AggregatedObservation>> {
     private String serviceName;
     public KafkaToFilteredObservationFn(Map<String, Object> conf) {
         serviceName = (String) conf.get(Config.SERVICE_NAME);
@@ -40,7 +41,12 @@ public class KafkaToFilteredObservationFn extends DoFn<KafkaRecord<String, Obser
 
         observations.getObservationList().forEach((obs) -> {
             if (!obs.getCid().contains(serviceName)) {
-                c.output(KV.of(obs.getCid(), obs));
+                Aggregator aggregator = new Aggregator(Aggregator.AggregatorType.AVG, Aggregator.AggregatorUnit.minutes);
+                AggregatedObservation aggregatedObservation = new AggregatedObservation();
+                aggregatedObservation.setAggregator(aggregator);
+                aggregatedObservation.setObservation(obs);
+                aggregatedObservation.setCount(1L);
+                c.output(KV.of(obs.getCid(), aggregatedObservation));
             }
         });
     }

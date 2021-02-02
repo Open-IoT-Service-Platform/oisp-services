@@ -23,6 +23,7 @@ import java.io.Serializable;
 public class AggregatedObservation implements Serializable {
     private Observation observation;
     private Aggregator aggregator;
+    private Long count; //count of samples which contributed to the aggregation
 
     public AggregatedObservation(Observation observation, Aggregator aggregator) {
         this.observation = observation;
@@ -45,5 +46,28 @@ public class AggregatedObservation implements Serializable {
 
     public void setAggregator(Aggregator aggregator) {
         this.aggregator = aggregator;
+    }
+
+    public Long getCount() {
+        return count;
+    }
+
+    public void setCount(Long count) {
+        this.count = count;
+    }
+
+    public AggregatedObservation withCount(Long count) {
+        setCount(count);
+        return this;
+    }
+
+    public AggregatedObservation withObservation(Observation observation) {
+        setObservation(observation);
+        return this;
+    }
+
+    public AggregatedObservation withAggregator(Aggregator aggregator) {
+        setAggregator(aggregator);
+        return this;
     }
 }
