@@ -31,12 +31,16 @@ RUN cd oisp-beam-rule-engine && mvn checkstyle:check pmd:check clean package -Pf
 # Add and build metrics-aggregator
 # --------------------------------
 
-ADD metrics-aggregator/pom.xml /app/metrics-aggregator/pom.xml
+ADD metrics-aggregator/pom*.xml /app/metrics-aggregator/
 RUN mkdir /app/metrics-aggregator/checkstyle
 ADD metrics-aggregator/checkstyle/checkstyle.xml /app/metrics-aggregator/checkstyle/checkstyle.xml
 ADD metrics-aggregator/src /app/metrics-aggregator/src
 
-RUN cd metrics-aggregator && mvn checkstyle:check clean package -Pflink-runner  -DskipTests
+
+RUN cd metrics-aggregator && mvn checkstyle:check clean package -Pflink-runner -DskipTests && \
+    if [ -f pom-next.xml ]; \
+        then  mvn package -Pflink-runner  -DskipTests -f pom-next.xml; \
+    fi
 
 # Add and build component-splitter
 # --------------------------------
@@ -49,8 +53,7 @@ RUN cd component-splitter && mvn clean package -Pflink-runner -DskipTests; \
     fi
 
 FROM httpd:2.4
-ENV METRICS_AGGREGATOR_VERSION=0.1.1
 
 COPY --from=rule-engine-builder /app/oisp-beam-rule-engine/target/rule-engine-bundled-*.jar /usr/local/apache2/htdocs/
-COPY --from=rule-engine-builder /app/metrics-aggregator/target/metrics-aggregator-bundled-$METRICS_AGGREGATOR_VERSION.jar /usr/local/apache2/htdocs/metrics-aggregator-bundled-$METRICS_AGGREGATOR_VERSION.jar
+COPY --from=rule-engine-builder /app/metrics-aggregator/target/metrics-aggregator-bundled-*.jar /usr/local/apache2/htdocs/
 COPY --from=rule-engine-builder /app/component-splitter/target/component-splitter-bundled-*.jar /usr/local/apache2/htdocs/

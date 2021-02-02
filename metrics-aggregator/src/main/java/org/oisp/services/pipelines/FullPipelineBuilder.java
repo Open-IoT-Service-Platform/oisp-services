@@ -83,37 +83,37 @@ public final class FullPipelineBuilder {
         KafkaObservationsSourceProcessor observationsKafka = new KafkaObservationsSourceProcessor(conf);
         KafkaObservationSink kafkaSink = new KafkaObservationsSinkProcessor(conf);
 
-        PCollection<KV<String, Observation>> observations = p.apply("Kafka Source", observationsKafka.getTransform())
+        PCollection<KV<String, AggregatedObservation>> observations = p.apply("Kafka Source", observationsKafka.getTransform())
                 .apply("Filter Observation", ParDo.of(new KafkaToFilteredObservationFn(conf)));
 
         // window for minutes
-        PCollection<KV<String, Observation>> observationsPerMinute = observations
-                .apply("Aggregation Window for minutes", Window.configure().<KV<String, Observation>>into(
+        PCollection<KV<String, AggregatedObservation>> observationsPerMinute = observations
+                .apply("Aggregation Window for minutes", Window.configure().<KV<String, AggregatedObservation>>into(
                 FullTimeInterval.withAggregator(
                         new Aggregator(Aggregator.AggregatorType.NONE, Aggregator.AggregatorUnit.minutes))
         ));
-        PCollection<KV<String, Iterable<Observation>>> groupedObservationsPerMinute = observationsPerMinute
-                .apply("Group windows by keys for minutes", GroupByKey.<String, Observation>create());
+        PCollection<KV<String, Iterable<AggregatedObservation>>> groupedObservationsPerMinute = observationsPerMinute
+                .apply("Group windows by keys for minutes", GroupByKey.<String, AggregatedObservation>create());
 
         // window for hours
-        PCollection<KV<String, Observation>> observationsPerHour = observations
-                .apply("Aggregation Window for hours", Window.configure().<KV<String, Observation>>into(
+        PCollection<KV<String, AggregatedObservation>> observationsPerHour = observationsPerMinute
+                .apply("Aggregation Window for hours", Window.configure().<KV<String, AggregatedObservation>>into(
                 FullTimeInterval.withAggregator(
                         new Aggregator(Aggregator.AggregatorType.NONE, Aggregator.AggregatorUnit.hours))
         ));
-        PCollection<KV<String, Iterable<Observation>>> groupedObservationsPerHour = observationsPerHour
-                .apply("Group windows by keys for hours", GroupByKey.<String, Observation>create());
+        PCollection<KV<String, Iterable<AggregatedObservation>>> groupedObservationsPerHour = observationsPerHour
+                .apply("Group windows by keys for hours", GroupByKey.<String, AggregatedObservation>create());
 
         // Apply aggregators
         // There are two windows, minutes and hours
-        PCollection<AggregatedObservation> aggrPerHour = groupedObservationsPerMinute
-                .apply(AGGREGATOR, ParDo.of(
-                        new AggregateAll(
-                                new Aggregator(Aggregator.AggregatorType.ALL, Aggregator.AggregatorUnit.minutes))));
-        PCollection<AggregatedObservation> aggrPerMinute = groupedObservationsPerHour
+        PCollection<AggregatedObservation> aggrPerHour = groupedObservationsPerHour
                 .apply(AGGREGATOR, ParDo.of(
                         new AggregateAll(
                                 new Aggregator(Aggregator.AggregatorType.ALL, Aggregator.AggregatorUnit.hours))));
+        PCollection<AggregatedObservation> aggrPerMinute = groupedObservationsPerMinute
+                .apply(AGGREGATOR, ParDo.of(
+                        new AggregateAll(
+                                new Aggregator(Aggregator.AggregatorType.ALL, Aggregator.AggregatorUnit.minutes))));
         // debugging output
         aggrPerHour.apply(DEBUG_OUTPUT, ParDo.of(new PrintAggregationResultFn()));
         aggrPerMinute.apply(DEBUG_OUTPUT, ParDo.of(new PrintAggregationResultFn()));
@@ -145,7 +145,7 @@ public final class FullPipelineBuilder {
             if (c.element() != null) {
                 Aggregator aggr = c.element().getAggregator();
                 Observation obs = c.element().getObservation();
-                System.out.println("Result of aggregator: aggr " + aggr.getType() + ", value: " + obs.getValue()
+                System.out.println("Result of aggregator: aggr " + aggr.getType() + "." + aggr.getUnit() + ", value: " + obs.getValue()
                         + ", key " + obs.getCid() + ", window(" + aggr.getWindowDuration() + ","
                         + aggr.getWindowStartTime(Instant.ofEpochMilli(obs.getOn())) + ") now:" + Instant.now());
                 c.output(Long.valueOf(0));

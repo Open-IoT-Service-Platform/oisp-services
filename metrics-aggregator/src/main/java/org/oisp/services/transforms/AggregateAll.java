@@ -26,7 +26,8 @@ import org.oisp.services.dataStructures.Aggregator;
 import org.oisp.services.utils.LogHelper;
 import org.slf4j.Logger;
 
-public class AggregateAll extends DoFn<KV<String, Iterable<Observation>>, AggregatedObservation> {
+
+public class AggregateAll extends DoFn<KV<String, Iterable<AggregatedObservation>>, AggregatedObservation> {
     private Aggregator aggregator;
 
     private static final Logger LOG = LogHelper.getLogger(AggregateAll.class);
@@ -34,47 +35,109 @@ public class AggregateAll extends DoFn<KV<String, Iterable<Observation>>, Aggreg
     public AggregateAll(Aggregator aggregator) {
         this.aggregator = aggregator;
     }
-    private void sendObservation(Aggregator.AggregatorType type, Observation immutableObs, ProcessContext c, Object value) {
+
+
+    private void sendObservation(Aggregator.AggregatorType type, AggregatedObservation immutableAggrObs, ProcessContext c, Object value, Long count) {
         if (aggregator.getType() == type || aggregator.getType() == Aggregator.AggregatorType.ALL) {
-            Observation newObs = new Observation(immutableObs);
+            AggregatedObservation newAggrObs = new AggregatedObservation();
+            Observation newObs = new Observation(immutableAggrObs.getObservation());
             newObs.setValue(value.toString());
             Aggregator newAggr = new Aggregator(type, aggregator.getUnit());
-            c.output(new AggregatedObservation(newObs, newAggr));
+            newAggrObs.setAggregator(newAggr);
+            newAggrObs.setObservation(newObs);
+            newAggrObs.setCount(count);
+
+            c.output(newAggrObs);
         }
     }
+
+    private Double sumAggregator(Aggregator.AggregatorType type, Double value, Double sum) {
+        if (type == Aggregator.AggregatorType.SUM) {
+            return value;
+        }
+        return sum;
+    }
+
+    private Long countAggregator(Aggregator.AggregatorType type, Double value, Long count) {
+        if (type == Aggregator.AggregatorType.COUNT) {
+            return value.longValue();
+        }
+        return count;
+    }
+
+    private Double minAggregator(Aggregator.AggregatorType type, Double value, Double min) {
+        if (type == Aggregator.AggregatorType.MIN) {
+            if (value < min) {
+                return value;
+            }
+        }
+        return min;
+    }
+
+    private Double maxAggregator(Aggregator.AggregatorType type, Double value, Double max) {
+        if (type == Aggregator.AggregatorType.MAX) {
+            if (value > max) {
+                return value;
+            }
+        }
+        return max;
+    }
+
     @ProcessElement
     public void processElement(ProcessContext c, PaneInfo paneInfo) {
-        Iterable<Observation> itObs  = c.element().getValue();
-        Observation firstObs = itObs.iterator().next();
-        if (firstObs.isNumber()) {
-            Long count = 0L;
-            Double min = Double.MAX_VALUE;
-            Double max = -Double.MAX_VALUE;
-            Double accum = 0.0;
-            for (Observation obs : itObs) {
-                Double value = 0.0;
-                try {
-                    value = Double.parseDouble(obs.getValue());
-                } catch (NumberFormatException error) {
-                    LOG.warn("Error: {}, cid: {} and value {} could not be parsed! ", error.getMessage(), firstObs.getCid(), obs.getValue());
-                }
-                accum += value;
+        Iterable<AggregatedObservation> itObs  = c.element().getValue();
+        AggregatedObservation firstObs = itObs.iterator().next();
+
+        if (!firstObs.getObservation().isNumber()) {
+            return;
+        }
+        Long avgcount = 0L;
+        Long count = 0L;
+        Double min = Double.MAX_VALUE;
+        Double max = -Double.MAX_VALUE;
+        Double accum = 0.0;
+        Double sum = 0.0;
+        for (AggregatedObservation aggrobs : itObs) {
+            Double value = 0.0;
+            try {
+                value = Double.parseDouble(aggrobs.getObservation().getValue());
+            } catch (NumberFormatException error) {
+                LOG.warn("Error: {}, cid: {} and value {} could not be parsed! ", error.getMessage(), firstObs.getObservation().getCid(), aggrobs.getObservation().getValue());
+            }
+
+            Aggregator.AggregatorType aggregatorType = aggrobs.getAggregator().getType();
+            if (aggregatorType == Aggregator.AggregatorType.AVG) {
+
+                accum += value * aggrobs.getCount();
+
                 if (value < min) {
                     min = value;
                 }
                 if (value > max) {
                     max = value;
                 }
-                count++;
+                avgcount += aggrobs.getCount();
             }
+            sum = sumAggregator(aggregatorType, value, sum);
+            count = countAggregator(aggregatorType, value, count);
+            min = minAggregator(aggregatorType, value, min);
+            max = maxAggregator(aggregatorType, value, max);
 
-            Double avg = accum / count;
-            Observation immutableObs = itObs.iterator().next();
-            sendObservation(Aggregator.AggregatorType.AVG, immutableObs, c, avg);
-            sendObservation(Aggregator.AggregatorType.SUM, immutableObs, c, accum);
-            sendObservation(Aggregator.AggregatorType.MIN, immutableObs, c, min);
-            sendObservation(Aggregator.AggregatorType.MAX, immutableObs, c, max);
-            sendObservation(Aggregator.AggregatorType.COUNT, immutableObs, c, count);
         }
+
+        Double avg = accum / avgcount;
+        if (sum == 0.0) {
+            sum = accum;
+        }
+        if (count == 0L) {
+            count = avgcount;
+        }
+        AggregatedObservation immutableObs = itObs.iterator().next();
+        sendObservation(Aggregator.AggregatorType.AVG, immutableObs, c, avg, count);
+        sendObservation(Aggregator.AggregatorType.SUM, immutableObs, c, sum, 0L);
+        sendObservation(Aggregator.AggregatorType.MIN, immutableObs, c, min, 0L);
+        sendObservation(Aggregator.AggregatorType.MAX, immutableObs, c, max, 0L);
+        sendObservation(Aggregator.AggregatorType.COUNT, immutableObs, c, count, 0L);
     }
+
 }
