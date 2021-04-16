@@ -180,10 +180,14 @@ class AggregateAllTest {
                 .withObservation(observation3)
                 .withAggregator(aggregatorMAX)
                 .withCount(1L);
+        AggregatedObservation aggregatedObservation7 = new AggregatedObservation()
+                .withObservation(observation3)
+                .withAggregator(aggregatorCOUNT)
+                .withCount(1L);
 
         AggregatedObservation aggObs = new AggregatedObservation(observation2, aggregatorAVG);
         Iterable<AggregatedObservation> itObs = Arrays.asList(aggregatedObservation1, aggregatedObservation2,
-                aggregatedObservation3, aggregatedObservation4, aggregatedObservation5, aggregatedObservation6);
+                aggregatedObservation3, aggregatedObservation4, aggregatedObservation5, aggregatedObservation6, aggregatedObservation7);
         KV<String, Iterable<AggregatedObservation>> input = KV.of("key", itObs);
         PCollection<AggregatedObservation> out = pipeline.apply("Create Input", Create.of(input))
                 .apply("test AggregateAvg", ParDo.of(new AggregateAll(aggregatorALL)));

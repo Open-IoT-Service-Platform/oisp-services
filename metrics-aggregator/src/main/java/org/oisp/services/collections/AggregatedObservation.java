@@ -36,8 +36,8 @@ public class AggregatedObservation implements Serializable {
         return observation;
     }
 
-    public void setObservation(Observation observavtion) {
-        this.observation = observavtion;
+    public void setObservation(Observation observation) {
+        this.observation = observation;
     }
 
     public Aggregator getAggregator() {
@@ -69,5 +69,8 @@ public class AggregatedObservation implements Serializable {
     public AggregatedObservation withAggregator(Aggregator aggregator) {
         setAggregator(aggregator);
         return this;
+    }
+    public String toString() {
+        return "AggregatedObservation" + "\ncount: " + this.count + "\n" + this.observation.toString();
     }
 }

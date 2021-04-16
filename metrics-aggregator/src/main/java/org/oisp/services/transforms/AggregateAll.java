@@ -92,11 +92,9 @@ public class AggregateAll extends DoFn<KV<String, Iterable<AggregatedObservation
             return;
         }
         Long avgcount = 0L;
-        Long count = 0L;
         Double min = Double.MAX_VALUE;
         Double max = -Double.MAX_VALUE;
         Double accum = 0.0;
-        Double sum = 0.0;
         for (AggregatedObservation aggrobs : itObs) {
             Double value = 0.0;
             try {
@@ -106,6 +104,10 @@ public class AggregateAll extends DoFn<KV<String, Iterable<AggregatedObservation
             }
 
             Aggregator.AggregatorType aggregatorType = aggrobs.getAggregator().getType();
+            if (aggregatorType == Aggregator.AggregatorType.COUNT || aggregatorType == Aggregator.AggregatorType.SUM) {
+                //these aggregations can be derived from AVG aggregator, should not be stored and ignored in any case
+                continue;
+            }
             if (aggregatorType == Aggregator.AggregatorType.AVG) {
 
                 accum += value * aggrobs.getCount();
@@ -118,26 +120,19 @@ public class AggregateAll extends DoFn<KV<String, Iterable<AggregatedObservation
                 }
                 avgcount += aggrobs.getCount();
             }
-            sum = sumAggregator(aggregatorType, value, sum);
-            count = countAggregator(aggregatorType, value, count);
             min = minAggregator(aggregatorType, value, min);
             max = maxAggregator(aggregatorType, value, max);
 
         }
 
         Double avg = accum / avgcount;
-        if (sum == 0.0) {
-            sum = accum;
-        }
-        if (count == 0L) {
-            count = avgcount;
-        }
+
         AggregatedObservation immutableObs = itObs.iterator().next();
-        sendObservation(Aggregator.AggregatorType.AVG, immutableObs, c, avg, count);
-        sendObservation(Aggregator.AggregatorType.SUM, immutableObs, c, sum, 0L);
+        sendObservation(Aggregator.AggregatorType.AVG, immutableObs, c, avg, avgcount);
+        sendObservation(Aggregator.AggregatorType.SUM, immutableObs, c, accum, 0L);
         sendObservation(Aggregator.AggregatorType.MIN, immutableObs, c, min, 0L);
         sendObservation(Aggregator.AggregatorType.MAX, immutableObs, c, max, 0L);
-        sendObservation(Aggregator.AggregatorType.COUNT, immutableObs, c, count, 0L);
+        sendObservation(Aggregator.AggregatorType.COUNT, immutableObs, c, avgcount, 0L);
     }
 
 }

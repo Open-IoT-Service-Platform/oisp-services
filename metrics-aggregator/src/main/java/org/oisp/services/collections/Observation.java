@@ -158,4 +158,7 @@ public class Observation implements Serializable {
     public int hashCode() {
         return Objects.hashCode(aid, cid, on, systemOn, value, loc, attributes);
     }
+    public String toString() {
+        return "Observation:" + "\naid:" + this.aid + "\ncid: " + this.cid + "\nvalue: " + this.value;
+    }
 }

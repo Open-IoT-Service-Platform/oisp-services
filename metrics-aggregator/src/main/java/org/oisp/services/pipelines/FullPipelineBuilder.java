@@ -18,50 +18,51 @@
 package org.oisp.services.pipelines;
 
 
-import com.google.common.collect.Iterators;
+import static org.apache.beam.sdk.Pipeline.create;
 
+import java.util.Iterator;
+import java.util.Map;
+
+import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.GenerateSequence;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.GroupByKey;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.kafka.common.serialization.StringSerializer;
-
 import org.joda.time.Duration;
-import org.apache.beam.sdk.Pipeline;
+import org.joda.time.Instant;
 import org.oisp.services.collections.AggregatedObservation;
 import org.oisp.services.collections.Observation;
 import org.oisp.services.conf.Config;
 import org.oisp.services.dataStructures.Aggregator;
-import org.oisp.services.transforms.KafkaToFilteredObservationFn;
 import org.oisp.services.transforms.AggregateAll;
 import org.oisp.services.transforms.KafkaObservationSink;
-import org.oisp.services.transforms.KafkaObservationsSourceProcessor;
 import org.oisp.services.transforms.KafkaObservationsSinkProcessor;
+import org.oisp.services.transforms.KafkaObservationsSourceProcessor;
+import org.oisp.services.transforms.KafkaToFilteredObservationFn;
 import org.oisp.services.transforms.SendObservation;
-
-
 import org.oisp.services.windows.FullTimeInterval;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import org.joda.time.Instant;
-
-import java.util.Iterator;
-import java.util.Map;
-
-
-import static org.apache.beam.sdk.Pipeline.create;
+import com.google.common.collect.Iterators;
 
 
 public final class FullPipelineBuilder {
+
+    private static final Logger LOG = LoggerFactory.getLogger(FullPipelineBuilder.class);
 
     private static final String DEBUG_OUTPUT = "Debug output";
     private static final String AGGREGATOR = "aggregator";
     private static final String PREPARE_OBSERVATION_FOR_SENDING = "Prepare Observation for sending";
     private static final String KAFKA_SINK = "Kafka Sink";
+    private static final String DOT = ".";
     private FullPipelineBuilder() {
     }
 
@@ -95,25 +96,33 @@ public final class FullPipelineBuilder {
         PCollection<KV<String, Iterable<AggregatedObservation>>> groupedObservationsPerMinute = observationsPerMinute
                 .apply("Group windows by keys for minutes", GroupByKey.<String, AggregatedObservation>create());
 
-        // window for hours
-        PCollection<KV<String, AggregatedObservation>> observationsPerHour = observationsPerMinute
-                .apply("Aggregation Window for hours", Window.configure().<KV<String, AggregatedObservation>>into(
-                FullTimeInterval.withAggregator(
-                        new Aggregator(Aggregator.AggregatorType.NONE, Aggregator.AggregatorUnit.hours))
-        ));
-        PCollection<KV<String, Iterable<AggregatedObservation>>> groupedObservationsPerHour = observationsPerHour
-                .apply("Group windows by keys for hours", GroupByKey.<String, AggregatedObservation>create());
+
 
         // Apply aggregators
         // There are two windows, minutes and hours
-        PCollection<AggregatedObservation> aggrPerHour = groupedObservationsPerHour
-                .apply(AGGREGATOR, ParDo.of(
-                        new AggregateAll(
-                                new Aggregator(Aggregator.AggregatorType.ALL, Aggregator.AggregatorUnit.hours))));
+
         PCollection<AggregatedObservation> aggrPerMinute = groupedObservationsPerMinute
                 .apply(AGGREGATOR, ParDo.of(
                         new AggregateAll(
                                 new Aggregator(Aggregator.AggregatorType.ALL, Aggregator.AggregatorUnit.minutes))));
+        // window for hours taking minute results
+        PCollection<KV<String, AggregatedObservation>> observationsPerHour = aggrPerMinute
+                .apply("Filter out non needed elements", Filter.by(aggObs -> aggObs.getAggregator().getType() != Aggregator.AggregatorType.COUNT
+                && aggObs.getAggregator().getType() != Aggregator.AggregatorType.SUM))
+                //.apply(ParDo.of(new DebugBridge2()))
+                .apply(ParDo.of(new AggregatedObservationToKV()))
+                .apply("Aggregation Window for hours", Window.configure().<KV<String, AggregatedObservation>>into(
+                        FullTimeInterval.withAggregator(
+                                new Aggregator(Aggregator.AggregatorType.NONE, Aggregator.AggregatorUnit.hours))
+                ));
+                //.apply(ParDo.of(new DebugBridge()));
+
+        PCollection<KV<String, Iterable<AggregatedObservation>>> groupedObservationsPerHour = observationsPerHour
+                .apply("Group windows by keys for hours", GroupByKey.<String, AggregatedObservation>create());
+        PCollection<AggregatedObservation> aggrPerHour = groupedObservationsPerHour
+                .apply(AGGREGATOR, ParDo.of(
+                        new AggregateAll(
+                                new Aggregator(Aggregator.AggregatorType.ALL, Aggregator.AggregatorUnit.hours))));
         // debugging output
         aggrPerHour.apply(DEBUG_OUTPUT, ParDo.of(new PrintAggregationResultFn()));
         aggrPerMinute.apply(DEBUG_OUTPUT, ParDo.of(new PrintAggregationResultFn()));
@@ -126,7 +135,7 @@ public final class FullPipelineBuilder {
         //Heartbeat Pipeline
         //Send regular Heartbeat to Kafka topic
         String serverUri = conf.get(Config.KAFKA_BOOTSTRAP_SERVERS).toString();
-        System.out.println("serverUri:" + serverUri);
+        LOG.debug("serverUri:" + serverUri);
         p.apply(GenerateSequence.from(0).withRate(1, Duration.standardSeconds(1)))
                 .apply(ParDo.of(new StringToKVFn()))
                 .apply(KafkaIO.<String, String>write()
@@ -145,7 +154,7 @@ public final class FullPipelineBuilder {
             if (c.element() != null) {
                 Aggregator aggr = c.element().getAggregator();
                 Observation obs = c.element().getObservation();
-                System.out.println("Result of aggregator: aggr " + aggr.getType() + "." + aggr.getUnit() + ", value: " + obs.getValue()
+                LOG.info("Result of aggregator: aggr " + aggr.getType() + DOT + aggr.getUnit() + ", value: " + obs.getValue()
                         + ", key " + obs.getCid() + ", window(" + aggr.getWindowDuration() + ","
                         + aggr.getWindowStartTime(Instant.ofEpochMilli(obs.getOn())) + ") now:" + Instant.now());
                 c.output(Long.valueOf(0));
@@ -163,17 +172,45 @@ public final class FullPipelineBuilder {
             Iterable<Observation> observations = c.element().getValue();
             Iterator<Observation> it = observations.iterator();
             Integer elements = Iterators.size(it);
-            System.out.print("key " + key + " size " + elements + "=> ");
+            LOG.info("key " + key + " size " + elements + "=> ");
             for (Iterator<Observation> iter = observations.iterator(); iter.hasNext();) {
                 Observation obs = iter.next();
                 if (!obs.isByteArray()) {
-                    System.out.print(obs.getValue() + ", " + Instant.ofEpochMilli(obs.getOn()) + ";");
+                    LOG.info(obs.getValue() + ", " + Instant.ofEpochMilli(obs.getOn()) + ";");
                 } else {
-                    System.out.print("*removed*");
+                    LOG.debug("*removed*");
                 }
             }
-            System.out.println("<= end");
+            LOG.debug("<= end");
             c.output(Long.valueOf(elements));
+        }
+    }
+
+    static class DebugBridge extends DoFn<KV<String, AggregatedObservation>, KV<String, AggregatedObservation>> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            KV<String, AggregatedObservation> element = c.element();
+            LOG.info("DebugBridge: " + element.getValue().toString() + " key: " + element.getKey());
+            c.output(element);
+        }
+    }
+
+    static class DebugBridge2 extends DoFn<AggregatedObservation, AggregatedObservation> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            AggregatedObservation element = c.element();
+            LOG.info("DebugBridge2: " + element.getAggregator().getType() + " observation " + element.getObservation());
+            c.output(element);
+        }
+    }
+
+    static class AggregatedObservationToKV extends DoFn<AggregatedObservation, KV<String, AggregatedObservation>> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            AggregatedObservation element = c.element();
+            KV<String, AggregatedObservation> aggKV = KV.of(element.getObservation().getAid() + DOT
+                    + element.getObservation().getCid(), element);
+            c.output(aggKV);
         }
     }
 
