@@ -91,6 +91,8 @@ commands:
             git clone ${CLONE_REPO}
             cd ${CIRCLE_PROJECT_REPONAME}
             git checkout origin/${CLONE_BRANCH}
+            git submodule init
+            git submodule update
   pull-images-and-build-only-testbranch:
     description: "Pull all images and only build the testbranch"
     parameters:
@@ -130,8 +132,13 @@ commands:
             make import-images DOCKER_TAG=test DEBUG=true
             npm install nodemailer
             export NODOCKERLOGIN=true
-            (for i in {1..20}; do sleep 60; echo .; done&) &&  make deploy-oisp-test DOCKER_TAG=test
-            make test
+            retval=2;
+            until [ ${retval} -eq 0 ]; do
+              make undeploy-oisp
+              (for i in {1..20}; do sleep 60; echo .; done&) &&  make deploy-oisp-test DOCKER_TAG=test USE_LOCAL_REGISTRY=true
+              make test
+              retval=$?
+            done
 jobs:
   e2e-test:
     executor: vm-executor
