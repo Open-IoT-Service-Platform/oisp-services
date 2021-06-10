@@ -1,5 +1,16 @@
 FROM python:3.8
-RUN pip install kubernetes kopf==0.28.3 oisp
-COPY beamservicesoperator.py /opt/beamservicesoperator.py
-COPY util.py /opt/util.py
-CMD kopf run --standalone /opt/beamservicesoperator.py
+RUN pip install kubernetes kopf==1.32.1 oisp
+ADD *.py /opt/
+ADD test/*.py /opt/test/
+ADD test/requirements.txt /opt/test/
+RUN cd /opt/test && pip install -r requirements.txt && PYTHONPATH=/opt python3 /opt/test/test_*.py
+FROM python:3.8
+RUN pip install kubernetes kopf==1.32.1 oisp
+ADD *.py /opt/
+WORKDIR /opt
+RUN groupadd -r bsoperator && useradd -r -g bsoperator bsoperator
+
+#RUN chown -R operator:operator /opt && chown -R operator:operator /var
+USER bsoperator
+
+CMD kopf run -A --standalone /opt/beamservicesoperator.py /opt/beamsqlstatementsetoperator.py
