@@ -10,15 +10,18 @@ import requests
 import util
 
 namespace = os.environ["OISP_NAMESPACE"]
-FLINK_URL = os.getenv("OISP_FLINK_REST") or f"http://flink-jobmanager-rest.{namespace}:8081"
+FLINK_URL = os.getenv(
+    "OISP_FLINK_REST") or f"http://flink-jobmanager-rest.{namespace}:8081"
 JOB_STATUS_UNKNOWN = "UNKNOWN"
 JOB_STATUS_FAILED = "FAILED"
 JOB_STATUS_CANCELED = "CANCELED"
 JOB_STATUS_FIXING = "OPERATOR TRIES TO FIX"
 
+
 @kopf.on.create("oisp.org", "v1", "beamservices")
 def create(body, spec, patch, **kwargs):
-    kopf.info(body, reason="Creating", message="Creating beamservices"+str(spec))
+    kopf.info(body, reason="Creating",
+              message="Creating beamservices"+str(spec))
     return {"createdOn": str(time.time())}
 
 
@@ -52,7 +55,8 @@ async def updates(stopped, patch, logger, body, spec, status, **kwargs):
     # check if job exists. If it exists, check whether the state is FAILED
     # all other states should be handled by jobmanager
     job_status = JOB_STATUS_UNKNOWN
-    # Hmm, but what is the jobname prefix? Assumption: lowercased entry class name
+    # Hmm, but what is the jobname prefix?
+    # Assumption: lowercased entry class name
     name = get_jobname_prefix(body, spec)
     try:
         jobs_request = requests.get(
@@ -64,7 +68,8 @@ async def updates(stopped, patch, logger, body, spec, status, **kwargs):
         need_job_restart = True
         for element in jobs:
             if element['id'] == job_id:
-                if element['status'] != JOB_STATUS_FAILED and element['status'] != JOB_STATUS_CANCELED:
+                if (element['status'] != JOB_STATUS_FAILED
+                        and element['status'] != JOB_STATUS_CANCELED):
                     # job exists but failed
                     # for all other states, assume that jobmanager is taking
                     # care for restarting
@@ -72,7 +77,8 @@ async def updates(stopped, patch, logger, body, spec, status, **kwargs):
                     job_status = element['status']
                 continue
             # Make sure that there are no old artefacts
-            # i.e. jobs with the resource prefix but not handled by us anylonger
+            # i.e. jobs with the resource prefix
+            # but not handled by us any longer
             # First get detail of the job
             job_request = requests.get(
                 f"{FLINK_URL}/jobs/{element['id']}").json()
@@ -80,7 +86,8 @@ async def updates(stopped, patch, logger, body, spec, status, **kwargs):
             # cancel if it has the resource prefix
             if name is not None and job_name.startswith(name):
                 # AND if it is not already in cancelled or failed state
-                if element['status'] != JOB_STATUS_CANCELED and element['status'] != JOB_STATUS_FAILED:
+                if (element['status'] != JOB_STATUS_CANCELED
+                        and element['status'] != JOB_STATUS_FAILED):
                     cancel_job(body, element['id'])
         if need_job_restart:
             return {"deployed": False, "jobCreated": False, "redeployed": True}
@@ -89,7 +96,7 @@ async def updates(stopped, patch, logger, body, spec, status, **kwargs):
         return
 
     patch.status['state'] = job_status
-    return #{"jobStatus": job_status.json().get("state")}
+    return  # {"jobStatus": job_status.json().get("state")}
 
 
 @kopf.on.delete("oisp.org", "v1", "beamservices")
@@ -134,19 +141,25 @@ def deploy(body, spec, patch):
     if url.startswith("http"):
         jarfile_path = download_file_via_http(url)
     elif url.startswith("ftp"):
-        jarfile_path = download_file_via_ftp(url, package["username"], package["password"])
+        jarfile_path = download_file_via_ftp(
+            url, package["username"], package["password"])
     else:
-        raise kopf.PermanentError("Jar download failed. Invalid url (must start with http or ftp)")
+        raise kopf.PermanentError(
+            "Jar download failed. Invalid url (must start with http or ftp)")
     patch.status["jarfile"] = jarfile_path
     try:
         response = requests.post(
-            f"{FLINK_URL}/jars/upload", files={"jarfile": open(jarfile_path, "rb")})
+            f"{FLINK_URL}/jars/upload",
+            files={"jarfile": open(jarfile_path, "rb")})
         if response.status_code != 200:
             delete_jar(body, jarfile_path)
-            raise kopf.TemporaryError(f"Jar submission failed. Status code: {response.status_code}", delay=10)
+            raise kopf.TemporaryError(
+                f"Jar submission failed. Status code: {response.status_code}",
+                delay=10)
     except requests.exceptions.RequestException as e:
         delete_jar(body, jarfile_path)
-        raise kopf.TemporaryError(f"Jar submission failed. Error: {e}", delay=10)
+        raise kopf.TemporaryError(
+            f"Jar submission failed. Error: {e}", delay=10)
     jar_id = response.json()["filename"].split("/")[-1]
     kopf.info(body, reason="BeamDeploymentSuccess",
               message=f"Submitted jar with id: {jar_id}")
@@ -161,7 +174,8 @@ def build_args(args_dict, tokens):
             continue
         assert isinstance(val, dict), "Values should be str or dict."
         assert "format" in val, "'format' is mandatory"
-        val = util.format_template(val["format"], tokens=tokens, encode=val.get("encode"))
+        val = util.format_template(
+            val["format"], tokens=tokens, encode=val.get("encode"))
         args_str += f"--{key}={val} "
     return args_str
 
@@ -178,11 +192,13 @@ def create_job(body, spec, jar_id):
                                    "programArgs": args})
     if response.status_code != 200:
         kopf.info(body, reason="BeamExecutionFailed",
-                  message=f"Could not run job, server returned: {response.status_code}")
+                  message="Could not run job, server returned:"
+                  + response.status_code)
         return None
     job_id = response.json().get("jobid")
     kopf.info(body, reason="Job created", message=f"Job id: {job_id}")
     return job_id
+
 
 def delete_jar(body, jar_path):
     if jar_path is not None:
@@ -190,8 +206,10 @@ def delete_jar(body, jar_path):
             try:
                 os.remove(jar_path)
             except OSError as e:
-                kopf.info(body, reason="Jar deleting", message=f"Could not delte jar file: {e}")
-            kopf.info(body, reason="Jar deleted", message=f"Jar file: {jar_path}")
+                kopf.info(body, reason="Jar deleting",
+                          message=f"Could not delte jar file: {e}")
+            kopf.info(body, reason="Jar deleted",
+                      message=f"Jar file: {jar_path}")
 
 
 def check_readiness(body):
@@ -201,16 +219,22 @@ def check_readiness(body):
             free_slots = response.json().get("slots-total")
             return free_slots
     except requests.exceptions.RequestException as e:
-            kopf.info(body, reason="jobmanager overview", message="Exception while trying to check cluster state. Reason: " + str(e))
-            return 0
+        kopf.info(body, reason="jobmanager overview",
+                  message="Exception while trying to check cluster state." +
+                  "Reason: " + str(e))
+        return 0
+
 
 def cancel_job(body, job_id):
     try:
         response = requests.patch(f"{FLINK_URL}/jobs/{job_id}")
         if response.status_code != 202:
-            raise kopf.TemporaryError("Could not cancel job from cluster", delay=5)
-    except requests.exceptions.RequestException as e:
-        raise kopf.TemporaryError("Could not cancel job from cluster: {e}", delay=5)
+            raise kopf.TemporaryError(
+                "Could not cancel job from cluster", delay=5)
+    except requests.exceptions.RequestException:
+        raise kopf.TemporaryError(
+            "Could not cancel job from cluster: {e}", delay=5)
+
 
 def get_jobname_prefix(body, spec):
     prefix_match = re.compile(r"\w*$")
@@ -219,5 +243,6 @@ def get_jobname_prefix(body, spec):
 
     if jobname is not None:
         jobname = jobname.lower()
-        kopf.info(body, reason="debugging", message=f"found jobname {jobname} in {classname}")
+        kopf.info(body, reason="debugging",
+                  message=f"found jobname {jobname} in {classname}")
     return jobname
