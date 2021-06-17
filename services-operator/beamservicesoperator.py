@@ -1,3 +1,5 @@
+"""A kopf operator that manages JAR jobs on flink."""
+
 import os
 import os.path
 import ftplib
@@ -19,28 +21,35 @@ JOB_STATUS_FIXING = "OPERATOR TRIES TO FIX"
 
 
 @kopf.on.create("oisp.org", "v1", "beamservices")
+# pylint: disable=unused-argument
+# Kopf decorated functions match their expectations
 def create(body, spec, patch, **kwargs):
+    """Handle job creation"""
     kopf.info(body, reason="Creating",
               message="Creating beamservices"+str(spec))
     return {"createdOn": str(time.time())}
 
 
-# TODO make this async
 @kopf.timer("oisp.org", "v1", "beamservices", interval=10, idle=5)
+# pylint: disable=unused-argument too-many-arguments
+# Kopf decorated functions match their expectations
 async def updates(stopped, patch, logger, body, spec, status, **kwargs):
+    """Repeteadely check job status and take necessary actions,
+    such as deployment once fetching is complete, or redeployment
+    after failure."""
     update_status = status.get("updates")
     if update_status is None:
         kopf.info(body, reason="Status None", message="Status is none")
         return {"deployed": False, "jobCreated": False}
+
     if not update_status.get("deployed"):
         # try to delete old jars if existing
-        jar_file = status.get("jarfile")
-        delete_jar(body, jar_file)
+        delete_jar(body, status.get("jarfile"))
         patch.status["jarfile"] = None
         # Now try to deploy new one
-        jar_id = deploy(body, spec, patch)
-        return {"deployed": True, "jarId": jar_id}
-    elif not update_status.get("jobCreated"):
+        return {"deployed": True, "jarId": deploy(body, spec, patch)}
+
+    if not update_status.get("jobCreated"):
         # before creating job, check whether jobmanager is ready
         # sometimes if it is not ready, deployments are failing and
         # this leads to LONG timeout until all is running again
@@ -49,20 +58,18 @@ async def updates(stopped, patch, logger, body, spec, status, **kwargs):
         job_id = create_job(body, spec, update_status["jarId"])
         if job_id is not None:
             return {"jobCreated": True, "jobId": job_id}
-        else:
-            # something is wrong try everything again
-            return {"deployed": False, "jobCreated": False}
+        # something is wrong, so try everything again
+        return {"deployed": False, "jobCreated": False}
+
     # check if job exists. If it exists, check whether the state is FAILED
     # all other states should be handled by jobmanager
     job_status = JOB_STATUS_UNKNOWN
     # Hmm, but what is the jobname prefix?
     # Assumption: lowercased entry class name
-    name = get_jobname_prefix(body, spec)
     try:
-        jobs_request = requests.get(
-            f"{FLINK_URL}/jobs").json()
+        jobs = requests.get(
+            f"{FLINK_URL}/jobs").json().get("jobs", [])
         # check whether job is in the list
-        jobs = jobs_request.get("jobs", [])
         job_id = update_status.get("jobId")
         # if we have a job_id, check wether it is running
         need_job_restart = True
@@ -80,27 +87,29 @@ async def updates(stopped, patch, logger, body, spec, status, **kwargs):
             # i.e. jobs with the resource prefix
             # but not handled by us any longer
             # First get detail of the job
-            job_request = requests.get(
-                f"{FLINK_URL}/jobs/{element['id']}").json()
-            job_name = job_request.get("name")
+            job_name = requests.get(
+                f"{FLINK_URL}/jobs/{element['id']}").json().get("name")
             # cancel if it has the resource prefix
+            name = get_jobname_prefix(body, spec)
             if name is not None and job_name.startswith(name):
                 # AND if it is not already in cancelled or failed state
                 if (element['status'] != JOB_STATUS_CANCELED
                         and element['status'] != JOB_STATUS_FAILED):
-                    cancel_job(body, element['id'])
+                    cancel_job(element['id'])
         if need_job_restart:
             return {"deployed": False, "jobCreated": False, "redeployed": True}
     except (ConnectionRefusedError, requests.ConnectionError):
         patch.status['state'] = job_status
-        return
 
     patch.status['state'] = job_status
-    return  # {"jobStatus": job_status.json().get("state")}
+    # return {"jobStatus": job_status.json().get("state")}
 
 
 @kopf.on.delete("oisp.org", "v1", "beamservices")
+# pylint: disable=unused-argument too-many-arguments
+# Kopf decorated functions match their expectations
 def delete(body, **kwargs):
+    """Delete given Beam Service."""
     try:
         update_status = body["status"].get("updates")
     except KeyError:
@@ -109,30 +118,32 @@ def delete(body, **kwargs):
         return
     job_id = update_status.get("jobId")
     if job_id:
-        cancel_job(body, job_id)
+        cancel_job(job_id)
 
 
 def download_file_via_http(url):
     """Download the file and return the saved path."""
     response = requests.get(url)
     path = "/tmp/" + str(uuid.uuid4()) + ".jar"
-    with open(path, "wb") as f:
-        f.write(response.content)
+    with open(path, "wb") as download_file:
+        download_file.write(response.content)
     return path
 
 
 def download_file_via_ftp(url, username, password):
+    """Download the file vie ftp and return the saved path."""
     local_path = "/tmp/" + str(uuid.uuid4()) + ".jar"
     url_without_protocol = url[6:]
     addr = url_without_protocol.split("/")[0]
     remote_path = "/".join(url_without_protocol.split("/")[1:])
-    with open(local_path, "wb") as f:
+    with open(local_path, "wb") as download_file:
         with ftplib.FTP(addr, username, password) as ftp:
-            ftp.retrbinary(f"RETR {remote_path}", f.write)
+            ftp.retrbinary(f"RETR {remote_path}", download_file.write)
     return local_path
 
 
 def deploy(body, spec, patch):
+    """Deploy the specified file to flink cluster."""
     # TODO Create schema for spec in CRD
     package = spec["package"]
     url = package["url"]
@@ -156,10 +167,10 @@ def deploy(body, spec, patch):
             raise kopf.TemporaryError(
                 f"Jar submission failed. Status code: {response.status_code}",
                 delay=10)
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException as exc:
         delete_jar(body, jarfile_path)
         raise kopf.TemporaryError(
-            f"Jar submission failed. Error: {e}", delay=10)
+            f"Jar submission failed. Error: {exc}", delay=10)
     jar_id = response.json()["filename"].split("/")[-1]
     kopf.info(body, reason="BeamDeploymentSuccess",
               message=f"Submitted jar with id: {jar_id}")
@@ -167,6 +178,8 @@ def deploy(body, spec, patch):
 
 
 def build_args(args_dict, tokens):
+    """Given a dictionary of arguments, build the corresponding encoded
+    argument string."""
     args_str = ""
     for key, val in args_dict.items():
         if isinstance(val, str):
@@ -181,6 +194,7 @@ def build_args(args_dict, tokens):
 
 
 def create_job(body, spec, jar_id):
+    """Create job after the required jar was submitted."""
     entry_class = spec["entryClass"]
     tokens = util.get_tokens(spec.get("tokens", []))
     kopf.info(body, reason="Got tokens", message=str(tokens))
@@ -201,42 +215,46 @@ def create_job(body, spec, jar_id):
 
 
 def delete_jar(body, jar_path):
+    """Delete jar at given filepath."""
     if jar_path is not None:
         if os.path.isfile(jar_path):
             try:
                 os.remove(jar_path)
-            except OSError as e:
+            except OSError as exc:
                 kopf.info(body, reason="Jar deleting",
-                          message=f"Could not delte jar file: {e}")
+                          message=f"Could not delte jar file: {exc}")
             kopf.info(body, reason="Jar deleted",
                       message=f"Jar file: {jar_path}")
 
 
 def check_readiness(body):
+    """Return number of free slots."""
     try:
         response = requests.get(f"{FLINK_URL}/overview")
         if response.status_code == 200:
-            free_slots = response.json().get("slots-total")
+            free_slots = response.json()["slots-total"]
             return free_slots
-    except requests.exceptions.RequestException as e:
+    except (requests.exceptions.RequestException, KeyError) as exc:
         kopf.info(body, reason="jobmanager overview",
-                  message="Exception while trying to check cluster state." +
-                  "Reason: " + str(e))
-        return 0
+                  message="Exception while trying to check cluster state."
+                  f"Reason: {exc}")
+    return 0
 
 
-def cancel_job(body, job_id):
+def cancel_job(job_id):
+    """Cancel job with the given job_id."""
     try:
         response = requests.patch(f"{FLINK_URL}/jobs/{job_id}")
         if response.status_code != 202:
             raise kopf.TemporaryError(
                 "Could not cancel job from cluster", delay=5)
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as exc:
         raise kopf.TemporaryError(
-            "Could not cancel job from cluster: {e}", delay=5)
+            "Could not cancel job from cluster: {e}", delay=5) from exc
 
 
 def get_jobname_prefix(body, spec):
+    """Get name prefix from spec."""
     prefix_match = re.compile(r"\w*$")
     classname = spec["entryClass"]
     jobname = prefix_match.search(classname)[0]

@@ -1,35 +1,42 @@
-import kopf
+"""A kopf operator that manages SQL jobs on flink."""
+
 import time
 import os
-import requests
 from enum import Enum
+
+import requests
+import kopf
+
 import flink_util
 
-namespace = os.getenv("OISP_NAMESPACE", default="oisp")
+oisp_namespace = os.getenv("OISP_NAMESPACE", default="oisp")
 FLINK_URL = os.getenv("OISP_FLINK_REST",
-                      default=f"http://flink-jobmanager-rest.{namespace}:8081")
-default_gateway_url = f"http://flink-sql-gateway.{namespace}:9000"
+                      default="http://flink-jobmanager-rest"
+                      f".{oisp_namespace}:8081")
+
+default_gateway_url = f"http://flink-sql-gateway.{oisp_namespace}:9000"
 FLINK_SQL_GATEWAY = os.getenv("OISP_FLINK_SQL_GATEWAY",
                               default=default_gateway_url)
-timer_interval_seconds = int(os.getenv("TIMER_INTERVAL", default=10))
-timer_backoff_seconds = int(os.getenv("TIMER_BACKOFF_INTERVAL", default=10))
+timer_interval_seconds = int(os.getenv("TIMER_INTERVAL", default="10"))
+timer_backoff_seconds = int(os.getenv("TIMER_BACKOFF_INTERVAL", default="10"))
 timer_backoff_temporary_failure_seconds = int(
-    os.getenv("TIMER_BACKOFF_TEMPORARY_FAILURE_INTERVAL", default=30))
+    os.getenv("TIMER_BACKOFF_TEMPORARY_FAILURE_INTERVAL", default="30"))
 
 
 class States(Enum):
-    INITIALIZED = "INITIALIZED",
-    DEPLOYING = "DEPLOYING",
-    DEPLOYMENT_FAILURE = "DEPLOYMENT_FAILURE",
-    RUNNING = "RUNNING",
-    FAILED = "FAILED",
-    CANCELED = "CANCELED",
-    CANCELING = "CANCELING",
+    """SQL Job states as defined by Flink"""
+    INITIALIZED = "INITIALIZED"
+    DEPLOYING = "DEPLOYING"
+    DEPLOYMENT_FAILURE = "DEPLOYMENT_FAILURE"
+    RUNNING = "RUNNING"
+    FAILED = "FAILED"
+    CANCELED = "CANCELED"
+    CANCELING = "CANCELING"
     UNKNOWN = "UNKNOWN"
 
 
 class DeploymentFailedException(Exception):
-    pass
+    """Deployment failed exception."""
 
 
 JOB_ID = "job_id"
@@ -37,11 +44,14 @@ STATE = "state"
 
 
 @kopf.on.create("oisp.org", "v1alpha1", "beamsqlstatementsets")
+# pylint: disable=unused-argument
+# Kopf decorated functions match their expectations
 def create(body, spec, patch, logger, **kwargs):
+    """Handle k8s create event."""
     name = body["metadata"].get("name")
     namespace = body["metadata"].get("namespace")
     kopf.info(body, reason="Creating",
-              message=f"Creating beamsqlstatementsets {name}" +
+              message=f"Creating beamsqlstatementsets {name}"
               f"in namespace {namespace}")
     logger.info(
         f"Created beamsqlstatementsets {name} in namespace {namespace}")
@@ -51,6 +61,8 @@ def create(body, spec, patch, logger, **kwargs):
 
 
 @kopf.on.delete("oisp.org", "v1alpha1", "beamsqlstatementsets", retries=10)
+# pylint: disable=unused-argument
+# Kopf decorated functions match their expectations
 def delete(body, spec, patch, logger, **kwargs):
     """
     Deleting beamsqlstatementsets
@@ -83,24 +95,27 @@ def delete(body, spec, patch, logger, **kwargs):
             f"Waiting for confirmation of cancelation for {namespace}/{name}",
             5)
 
-    elif state == States.CANCELING.name:
+    if state == States.CANCELING.name:
         refresh_state(body, patch, logger)
         if not patch.status[STATE] == States.CANCELED.name:
             raise kopf.TemporaryError(
-                f"Canceling, waiting for final confirmation of cancelation"
-                "for {namespace}/{name}", 5)
+                "Canceling, waiting for final confirmation of cancelation"
+                f"for {namespace}/{name}", 5)
     kopf.info(body, reason="deleting",
               message=f" {namespace}/{name} cancelled and ready for deletion")
     logger.info(f" {namespace}/{name} cancelled and ready for deletion")
 
 
 @kopf.index('oisp.org', "v1alpha1", "beamsqltables")
-def beamsqltables(name: str, namespace: str, body: kopf.Body, **_):
+# pylint: disable=missing-function-docstring
+def index_beamsqltables(name: str, namespace: str, body: kopf.Body, **_):
     return {(namespace, name): body}
 
 
 @kopf.timer("oisp.org", "v1alpha1", "beamsqlstatementsets",
             interval=timer_interval_seconds, backoff=timer_backoff_seconds)
+# pylint: disable=too-many-arguments unused-argument
+# Kopf decorated functions match their expectations
 def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
             status, **kwargs):
     """
@@ -143,33 +158,34 @@ def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
         # get inputTable and outputTable
         ddls = f"SET pipeline.name = '{namespace}/{name}';\n"
         try:
-            table_names = spec.get("tables")
-            for table_name in table_names:
-                beamsqltable, *_ = beamsqltables[(namespace, table_name)]
-                ddl = create_ddl_from_beamsqltables(body, beamsqltable, logger)
-                ddls += ddl + "\n"
-        except:
-            logger.error(f"Table DDLs could not be created for"
-                         "{namespace}/{name}."
+            ddls += "\n".join(create_ddl_from_beamsqltables(
+                body,
+                beamsqltables[(namespace, table_name)][0],
+                logger) for table_name in spec.get("tables")) + "\n"
+
+        except (KeyError, TypeError) as exc:
+            logger.error("Table DDLs could not be created for"
+                         f"{namespace}/{name}."
                          "Check the table definitions and references.")
-            raise kopf.TemporaryError(f"Table DDLs could not be created for"
-                                      "{namespace}/{name}. Check the table"
+            raise kopf.TemporaryError("Table DDLs could not be created for"
+                                      f"{namespace}/{name}. Check the table"
                                       "definitions and references.",
-                                      timer_backoff_temporary_failure_seconds)
+                                      timer_backoff_temporary_failure_seconds)\
+                from exc
+
         # now create statement set
-        statements = spec.get("sqlstatements")
         statementset = ddls
         statementset += "BEGIN STATEMENT SET;\n"
-        for statement in statements:
-            statementset += statement + "\n"
-            # TODO: check for "insert into" prefix and terminating ";"
-            # in sqlstatement
+        statementset += "\n".join(spec.get("sqlstatements")) + "\n"
+        # TODO: check for "insert into" prefix and terminating ";"
+        # in sqlstatement
         statementset += "END;"
         logger.debug(f"Now deploying statementset {statementset}")
         try:
-            job_id = deploy_statementset(statementset, logger)
+            patch.status[JOB_ID] = deploy_statementset(statementset, logger)
+            patch.status[STATE] = States.DEPLOYING.name
+            return
         except DeploymentFailedException as err:
-            # deploying failed
             # Temporary error as we do not know the reason
             patch.status[STATE] = States.DEPLOYMENT_FAILURE.name
             patch.status[JOB_ID] = None
@@ -178,13 +194,9 @@ def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
                 f"Could not deploy statement: {err}",
                 timer_backoff_temporary_failure_seconds)
 
-        patch.status[STATE] = States.DEPLOYING.name
-        patch.status[JOB_ID] = job_id
-        return
-
     # If state is not INITIALIZED, DEPLOYMENT_FAILURE nor CANCELED,
     # the state is monitored
-    elif state not in [States.CANCELED.name, States.CANCELING.name]:
+    if state not in [States.CANCELED.name, States.CANCELING.name]:
         refresh_state(body, patch, logger)
         if patch.status[STATE] == States.UNKNOWN.name:
             patch.status[STATE] = States.INITIALIZED.name
@@ -192,14 +204,15 @@ def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
 
 
 def refresh_state(body, patch, logger):
+    """Refrest patch.status.state"""
     job_id = body['status'].get(JOB_ID)
     try:
         job_info = flink_util.get_job_status(logger, job_id)
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as exc:
         patch.status[STATE] = States.UNKNOWN.name
         raise kopf.TemporaryError(
             f"Could not monitor task {job_id}",
-            timer_backoff_temporary_failure_seconds)
+            timer_backoff_temporary_failure_seconds) from exc
     if job_info is not None:
         patch.status[STATE] = job_info.get("state")
     else:
@@ -232,13 +245,8 @@ def create_ddl_from_beamsqltables(body, beamsqltable, logger):
     """
     name = beamsqltable.metadata.name
     ddl = f"CREATE TABLE `{name}` ("
-    for key, value in beamsqltable.spec.get("fields").items():
-        if key == "watermark":
-            insert_key = key
-        else:
-            insert_key = f"`{key}`"
-        ddl += f"{insert_key} {value},"
-    ddl = ddl[:-1]  # remove last "," from ddl, enumeration is done
+    ddl += ",".join(f"{k} {v}" if k == "watermark" else f"`{k}` {v}"
+                    for k, v in beamsqltable.spec.get("fields").items())
     ddl += ") WITH ("
     if beamsqltable.spec.get("connector") != "kafka":
         message = f"Beamsqltable {name} has not supported connector."
@@ -258,8 +266,8 @@ def create_ddl_from_beamsqltables(body, beamsqltable, logger):
         message = f"Beamsqltable {name} has no value.format description."
         kopf.warn(body, reason="invalid CRD", message=message)
         logger.warn(message)
-    for v_key, v_value in value.items():
-        ddl += f",'{v_key}' = '{v_value}'"
+
+    ddl += "," + ",".join(f"'{k}' = '{v}'" for k, v in value.items())
     # loop through the kafka structure
     # map all key value pairs to 'key' = 'value',
     # except properties
@@ -322,11 +330,12 @@ def deploy_statementset(statementset, logger):
                                  json={"statement": statementset})
     except requests.RequestException as err:
         raise DeploymentFailedException(
-            f"Could not deploy job to {request}, server unreachable ({err})")
+            f"Could not deploy job to {request}, server unreachable ({err})")\
+            from err
     if response.status_code != 200:
         raise DeploymentFailedException(
             f"Could not deploy job to {request}, server returned:"
-            "{response.status_code}")
+            f"{response.status_code}")
     logger.debug(f"Response: {response.json()}")
     job_id = response.json().get("jobid")
     return job_id
