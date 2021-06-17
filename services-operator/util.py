@@ -1,3 +1,5 @@
+"""Helpers for the beam services operator."""
+
 import json
 import os
 
@@ -14,16 +16,16 @@ def load_config_from_env(varname, seen_keys=None):
     Values starting with @@ or %% are further ENV variables."""
     if seen_keys is None:
         seen_keys = []
-    config = json.loads(os.environ[varname])
-    for key, value in config.items():
+    varconfig = json.loads(os.environ[varname])
+    for key, value in varconfig.items():
         try:
             if value[:2] in ['@@', '%%']:
                 assert key not in seen_keys, "Cyclic config"
                 seen_keys.append(key)
-                config[key] = load_config_from_env(value[2:], seen_keys[:])
+                varconfig[key] = load_config_from_env(value[2:], seen_keys[:])
         except TypeError:  # value not indexable = not string or unicode
             pass
-    return config
+    return varconfig
 
 
 config = {}
@@ -44,6 +46,7 @@ def get_tokens(users):
 
 
 def format_template(string, tokens=None, encode=None):
+    """Create an encoding from given string template."""
     if tokens is None:
         tokens = {}
     format_values = {"config": config,
