@@ -108,13 +108,13 @@ def delete(body, spec, patch, logger, **kwargs):
 
 @kopf.index('oisp.org', "v1alpha1", "beamsqltables")
 # pylint: disable=missing-function-docstring
-def index_beamsqltables(name: str, namespace: str, body: kopf.Body, **_):
+def beamsqltables(name: str, namespace: str, body: kopf.Body, **_):
     return {(namespace, name): body}
 
 
 @kopf.timer("oisp.org", "v1alpha1", "beamsqlstatementsets",
             interval=timer_interval_seconds, backoff=timer_backoff_seconds)
-# pylint: disable=too-many-arguments unused-argument
+# pylint: disable=too-many-arguments unused-argument redefined-outer-name
 # Kopf decorated functions match their expectations
 def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
             status, **kwargs):
@@ -160,16 +160,16 @@ def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
         try:
             ddls += "\n".join(create_ddl_from_beamsqltables(
                 body,
-                beamsqltables[(namespace, table_name)][0],
+                list(beamsqltables[(namespace, table_name)])[0],
                 logger) for table_name in spec.get("tables")) + "\n"
 
         except (KeyError, TypeError) as exc:
-            logger.error("Table DDLs could not be created for"
+            logger.error("Table DDLs could not be created for "
                          f"{namespace}/{name}."
                          "Check the table definitions and references.")
-            raise kopf.TemporaryError("Table DDLs could not be created for"
+            raise kopf.TemporaryError("Table DDLs could not be created for "
                                       f"{namespace}/{name}. Check the table"
-                                      "definitions and references.",
+                                      "definitions and references: "f"{exc}",
                                       timer_backoff_temporary_failure_seconds)\
                 from exc
 
@@ -206,12 +206,15 @@ def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
 def refresh_state(body, patch, logger):
     """Refrest patch.status.state"""
     job_id = body['status'].get(JOB_ID)
+    job_info = None
     try:
         job_info = flink_util.get_job_status(logger, job_id)
+    except requests.HTTPError as exc:
+        pass
     except requests.exceptions.RequestException as exc:
         patch.status[STATE] = States.UNKNOWN.name
         raise kopf.TemporaryError(
-            f"Could not monitor task {job_id}",
+            f"Could not monitor task {job_id}: {exc}",
             timer_backoff_temporary_failure_seconds) from exc
     if job_info is not None:
         patch.status[STATE] = job_info.get("state")

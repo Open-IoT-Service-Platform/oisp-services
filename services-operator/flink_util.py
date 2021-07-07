@@ -15,10 +15,12 @@ class CancelJobFailedException(Exception):
 def get_job_status(logger, job_id):
     """Get job status as json dict as returned by Flink"""
     logger.debug(f"Requestion status for {job_id} from flink job-manager")
-    job_request = requests.get(
-        f"{FLINK_URL}/jobs/{job_id}").json()
-    logger.debug(f"Received job status: {job_request}")
-    return job_request
+    job_response = requests.get(
+        f"{FLINK_URL}/jobs/{job_id}")
+    job_response.raise_for_status()
+    job_response = job_response.json()
+    logger.debug(f"Received job status: {job_response}")
+    return job_response
 
 
 def cancel_job(logger, job_id):
