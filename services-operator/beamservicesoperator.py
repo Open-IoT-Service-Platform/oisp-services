@@ -159,14 +159,16 @@ def deploy(body, spec, patch):
             "Jar download failed. Invalid url (must start with http or ftp)")
     patch.status["jarfile"] = jarfile_path
     try:
-        response = requests.post(
-            f"{FLINK_URL}/jars/upload",
-            files={"jarfile": open(jarfile_path, "rb")})
-        if response.status_code != 200:
-            delete_jar(body, jarfile_path)
-            raise kopf.TemporaryError(
-                f"Jar submission failed. Status code: {response.status_code}",
-                delay=10)
+        with open(jarfile_path, "rb") as jarfile:
+            response = requests.post(
+                f"{FLINK_URL}/jars/upload",
+                files={"jarfile": jarfile})
+            if response.status_code != 200:
+                delete_jar(body, jarfile_path)
+                raise kopf.TemporaryError(
+                    "Jar submission failed."
+                    f"Status code: {response.status_code}",
+                    delay=10)
     except requests.exceptions.RequestException as exc:
         delete_jar(body, jarfile_path)
         raise kopf.TemporaryError(
