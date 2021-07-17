@@ -8,6 +8,7 @@ import requests
 import kopf
 
 import flink_util
+import tables_and_views
 
 oisp_namespace = os.getenv("OISP_NAMESPACE", default="oisp")
 FLINK_URL = os.getenv("OISP_FLINK_REST",
@@ -43,7 +44,7 @@ JOB_ID = "job_id"
 STATE = "state"
 
 
-@kopf.on.create("oisp.org", "v1alpha1", "beamsqlstatementsets")
+@kopf.on.create("oisp.org", "v1alpha2", "beamsqlstatementsets")
 # pylint: disable=unused-argument
 # Kopf decorated functions match their expectations
 def create(body, spec, patch, logger, **kwargs):
@@ -60,7 +61,7 @@ def create(body, spec, patch, logger, **kwargs):
     return {"createdOn": str(time.time())}
 
 
-@kopf.on.delete("oisp.org", "v1alpha1", "beamsqlstatementsets", retries=10)
+@kopf.on.delete("oisp.org", "v1alpha2", "beamsqlstatementsets", retries=10)
 # pylint: disable=unused-argument
 # Kopf decorated functions match their expectations
 def delete(body, spec, patch, logger, **kwargs):
@@ -81,7 +82,7 @@ def delete(body, spec, patch, logger, **kwargs):
             refresh_state(body, patch, logger)
             if patch.status[STATE]:
                 state = patch.status[STATE]
-            if state in [States.CANCELING.name, States.CANCELED.name]:
+            if state not in [States.CANCELING.name, States.CANCELED.name]:
                 flink_util.cancel_job(logger, job_id)
         except (KeyError, flink_util.CancelJobFailedException,
                 kopf.TemporaryError) as err:
@@ -106,18 +107,25 @@ def delete(body, spec, patch, logger, **kwargs):
     logger.info(f" {namespace}/{name} cancelled and ready for deletion")
 
 
-@kopf.index('oisp.org', "v1alpha1", "beamsqltables")
+@kopf.index('oisp.org', "v1alpha2", "beamsqltables")
 # pylint: disable=missing-function-docstring
 def beamsqltables(name: str, namespace: str, body: kopf.Body, **_):
     return {(namespace, name): body}
 
 
-@kopf.timer("oisp.org", "v1alpha1", "beamsqlstatementsets",
+@kopf.index('oisp.org', "v1alpha1", "beamsqlviews")
+# pylint: disable=missing-function-docstring
+def beamsqlviews(name: str, namespace: str, body: kopf.Body, **_):
+    return {(namespace, name): body}
+
+
+@kopf.timer("oisp.org", "v1alpha2", "beamsqlstatementsets",
             interval=timer_interval_seconds, backoff=timer_backoff_seconds)
 # pylint: disable=too-many-arguments unused-argument redefined-outer-name
+# pylint: disable=too-many-locals
 # Kopf decorated functions match their expectations
-def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
-            status, **kwargs):
+def updates(beamsqltables: kopf.Index, beamsqlviews: kopf.Index, patch, logger,
+            body, spec, status, **kwargs):
     """
     Managaging the main lifecycle of the beamsqlstatementset crd
     Current state is stored under
@@ -145,31 +153,58 @@ def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
     Currently, cancelled state is not recovered
     """
     namespace = body['metadata'].get("namespace")
-    name = body['metadata'].get("name")
-    state = body['status'].get(STATE)
-    logger.debug(
-        f"Triggered updates for {namespace}/{name} with state {state}")
+    metadata_name = body['metadata'].get("name")
+    try:
+        state = body['status'].get(STATE)
+    except (KeyError, TypeError):
+        create(body, spec, patch, logger, **kwargs)
+        return
 
+    if state == States.UNKNOWN.name:
+        create(body, spec, patch, logger, **kwargs)
+        return
+
+    logger.debug(
+        f"Triggered updates for {namespace}/{metadata_name}"
+        f" with state {state}")
+    name = spec.get('name')
+    if not name:
+        message = f"No name specified in spec of {namespace}/{metadata_name}"
+        logger.warning(message)
+        name = metadata_name
     if state in [States.INITIALIZED.name, States.DEPLOYMENT_FAILURE.name]:
         # deploying
         logger.debug(f"Deyploying {namespace}/{name}")
 
+        # create the full statement in the folloing order:
+        # (1) SET statements (sqlsettings)
+        # (2) Tables
+        # (3) Views
+
+        ddls = create_sets(spec, namespace, name, logger)
+
         # get first all table ddls
         # get inputTable and outputTable
-        ddls = f"SET pipeline.name = '{namespace}/{name}';\n"
+
+        ddls += create_tables(beamsqltables, spec, body, namespace, name,
+                              logger)
+
+        # Now get all views
         try:
-            ddls += "\n".join(create_ddl_from_beamsqltables(
-                body,
-                list(beamsqltables[(namespace, table_name)])[0],
-                logger) for table_name in spec.get("tables")) + "\n"
+            if spec.get("views") is not None:
+                ddls += "\n".join(tables_and_views.create_view(
+                    list(beamsqlviews[(namespace, view_name)])[0]
+                    ) for view_name in spec.get("views")) + "\n"
 
         except (KeyError, TypeError) as exc:
-            logger.error("Table DDLs could not be created for "
+            logger.error("Views could not be created for "
                          f"{namespace}/{name}."
-                         "Check the table definitions and references.")
-            raise kopf.TemporaryError("Table DDLs could not be created for "
-                                      f"{namespace}/{name}. Check the table"
-                                      "definitions and references: "f"{exc}",
+                         "Check the views definitions and table references: "
+                         f"{exc}")
+            raise kopf.TemporaryError("Views could not be created for "
+                                      f"{namespace}/{name}. Check the view"
+                                      "definitions and table references: "
+                                      f"{exc}",
                                       timer_backoff_temporary_failure_seconds)\
                 from exc
 
@@ -203,6 +238,51 @@ def updates(beamsqltables: kopf.Index, stopped, patch, logger, body, spec,
             patch.status[JOB_ID] = None
 
 
+# pylint: disable=too-many-arguments unused-argument redefined-outer-name
+# kopf is ingesting too many parameters, this is inherite by subroutine
+def create_tables(beamsqltables, spec, body, namespace, name, logger):
+    """
+    create tables from beamsqltables index
+    """
+    ddls = ""
+    try:
+        ddls += "\n".join(tables_and_views.create_ddl_from_beamsqltables(
+            list(beamsqltables[(namespace, table_name)])[0],
+            logger) for table_name in spec.get("tables")) + "\n"
+
+    except (KeyError, TypeError) as exc:
+        logger.error("Table DDLs could not be created for "
+                     f"{namespace}/{name}."
+                     "Check the table definitions and references.")
+        raise kopf.TemporaryError("Table DDLs could not be created for "
+                                  f"{exc}"
+                                  f"{namespace}/{name}. Check the table"
+                                  "definitions and references: "f"{exc}",
+                                  timer_backoff_temporary_failure_seconds)\
+            from exc
+    return ddls
+
+
+def create_sets(spec, namespace, name, logger):
+    """
+    create the list of SET statements which configures the
+    statementsets
+    """
+    sets = ""
+    sqlsettings = spec.get('sqlsettings')
+    if not sqlsettings:
+        message = f"sqlstatements not found in {namespace}/{name}"
+        logger.debug(message)
+        sets = f"SET pipeline.name = '{namespace}/{name}';\n"
+    elif all(x for x in sqlsettings if x.get('pipeline.name') is None):
+        sets = f"SET pipeline.name = '{namespace}/{name}';\n"
+        for setting in sqlsettings:
+            key = list(setting.keys())[0]
+            value = setting.get(key)
+            sets += f"SET '{key}' = '{value}';\n"
+    return sets
+
+
 def refresh_state(body, patch, logger):
     """Refrest patch.status.state"""
     job_id = body['status'].get(JOB_ID)
@@ -223,88 +303,6 @@ def refresh_state(body, patch, logger):
         # after restart of job manager
         # In this case, we need to signal that stage
         patch.status[STATE] = States.UNKNOWN.name
-
-
-def create_ddl_from_beamsqltables(body, beamsqltable, logger):
-    """
-    creates an sql ddl object out of a beamsqltables object
-    Works only with kafka connector
-    column names (fields) are not expected to be escaped with ``.
-    This is inserted explicitly.
-    The value of the fields are supposed to be prepared to pass SQL parsing
-    value: STRING # will be translated into `value` STRING,
-    value is an SQL keyword (!)
-    dvalue: AS CAST(`value` AS DOUBLE) # will b translated into `dvalue`
-        AS CAST(`value` AS DOUBLE), `value` here is epected to be masqued
-
-    Parameters
-    ----------
-    body: dict
-        Beamsqlstatementset which is currently processed
-    beamsqltable: dict
-        Beamsqltable object
-    logger: log object
-        Local log object provided from framework
-    """
-    name = beamsqltable.metadata.name
-    ddl = f"CREATE TABLE `{name}` ("
-    ddl += ",".join(f"{k} {v}" if k == "watermark" else f"`{k}` {v}"
-                    for k, v in beamsqltable.spec.get("fields").items())
-    ddl += ") WITH ("
-    if beamsqltable.spec.get("connector") != "kafka":
-        message = f"Beamsqltable {name} has not supported connector."
-        kopf.warn(body, reason="invalid CRD", message=message)
-        logger.warn(message)
-        return None
-    ddl += "'connector' = 'kafka'"
-    # loop through the value structure
-    # value.format is mandatory
-    value = beamsqltable.spec.get("value")
-    if not value:
-        message = f"Beamsqltable {name} has no value description."
-        kopf.warn(body, reason="invalid CRD", message=message)
-        logger.warn(message)
-        return None
-    if not value.get("format"):
-        message = f"Beamsqltable {name} has no value.format description."
-        kopf.warn(body, reason="invalid CRD", message=message)
-        logger.warn(message)
-
-    ddl += "," + ",".join(f"'{k}' = '{v}'" for k, v in value.items())
-    # loop through the kafka structure
-    # map all key value pairs to 'key' = 'value',
-    # except properties
-    kafka = beamsqltable.spec.get("kafka")
-    if not kafka:
-        message = f"Beamsqltable {name} has no Kafka connector descriptor."
-        kopf.warn(body, reason="invalid CRD", message=message)
-        logger.warn(message)
-        return None
-    # check mandatory fields in Kafka, topic, bootstrap.server
-    if not kafka.get("topic"):
-        message = f"Beamsqltable {name} has no kafka topic."
-        kopf.warn(body, reason="invalid CRD", message=message)
-        logger.warn(message)
-        return None
-
-    try:
-        _ = kafka["properties"]["bootstrap.servers"]
-    except KeyError:
-        message = f"Beamsqltable {name} has no kafka bootstrap servers found"
-        kopf.warn(body, reason="invalid CRD", message=message)
-        logger.warn(message)
-        return None
-    # the other fields are inserted, there is not a check for valid fields yet
-    for kafka_key, kafka_value in kafka.items():
-        # properties are iterated separately
-        if kafka_key == 'properties':
-            for property_key, property_value in kafka_value.items():
-                ddl += f",'properties.{property_key}' = '{property_value}'"
-        else:
-            ddl += f", '{kafka_key}' = '{kafka_value}'"
-    ddl += ");"
-    logger.debug(f"Created table ddl for table {name}: {ddl}")
-    return ddl
 
 
 def deploy_statementset(statementset, logger):

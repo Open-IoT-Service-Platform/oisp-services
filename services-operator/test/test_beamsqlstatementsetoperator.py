@@ -23,7 +23,7 @@ class Logger():
     def error(self, message):
         pass
 
-    def warn(self, message):
+    def warning(self, message):
         pass
 
 
@@ -50,7 +50,7 @@ class TestInit(TestCase):
 
 
 class TestUpdates(TestCase):
-    def create_ddl_from_beamsqltables(body, beamsqltable, logger):
+    def create_ddl_from_beamsqltables(beamsqltable, logger):
         return "DDL;"
 
     def submit_statementset_successful(statementset, logger):
@@ -66,7 +66,7 @@ class TestUpdates(TestCase):
     def update_status_unknown(body, patch, logger):
         patch.status["state"] = "UNKNOWN"
 
-    @patch('beamsqlstatementsetoperator.create_ddl_from_beamsqltables',
+    @patch('beamsqlstatementsetoperator.tables_and_views.create_ddl_from_beamsqltables',
            create_ddl_from_beamsqltables)
     @patch('beamsqlstatementsetoperator.deploy_statementset',
            submit_statementset_successful)
@@ -95,7 +95,7 @@ class TestUpdates(TestCase):
         self.assertEqual(patch.status['state'], "DEPLOYING")
         self.assertEqual(patch.status['job_id'], "job_id")
 
-    @patch('beamsqlstatementsetoperator.create_ddl_from_beamsqltables',
+    @patch('beamsqlstatementsetoperator.tables_and_views.create_ddl_from_beamsqltables',
            create_ddl_from_beamsqltables)
     @patch('beamsqlstatementsetoperator.deploy_statementset',
            submit_statementset_failed)
@@ -127,7 +127,7 @@ class TestUpdates(TestCase):
         self.assertEqual(patch.status['state'], "DEPLOYMENT_FAILURE")
         self.assertIsNone(patch.status['job_id'])
 
-    @patch('beamsqlstatementsetoperator.create_ddl_from_beamsqltables',
+    @patch('beamsqlstatementsetoperator.tables_and_views.create_ddl_from_beamsqltables',
            create_ddl_from_beamsqltables)
     @patch('beamsqlstatementsetoperator.deploy_statementset',
            submit_statementset_failed)
@@ -157,7 +157,7 @@ class TestUpdates(TestCase):
             self.assertTrue(str(cm.exception).startswith(
                 "Table DDLs could not be created for namespace/name."))
 
-    @patch('beamsqlstatementsetoperator.create_ddl_from_beamsqltables',
+    @patch('beamsqlstatementsetoperator.tables_and_views.create_ddl_from_beamsqltables',
            create_ddl_from_beamsqltables)
     @patch('beamsqlstatementsetoperator.deploy_statementset',
            submit_statementset_failed)

@@ -33,6 +33,7 @@ app.post('/v1/sessions/:session_id/statements', function (request, response) {
   exec(command, (error, stdout, stderr) => {
     fs.unlinkSync(filename);
     if (error) {
+      logger.error("Error while executing sql-client: " + error);
       response.status(500);
       response.send("Error while executing sql-client: " + error);
       return;
