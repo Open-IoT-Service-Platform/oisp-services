@@ -1,4 +1,4 @@
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: beamservices.oisp.org
@@ -9,24 +9,34 @@ spec:
     - name: v1
       served: true
       storage: true
-#      schema:
-#        openAPIV3Schema:
-#          type: object
-#          properties:
-#            spec:
-#              type: object
-#              properties:
-#                entryClass:
-#                  type: string
-#                args:
-#                  type: object
-#                url:
-#                  type: string
-#                jarId:
-#                  type: string
-#                jobId:
-#                  type: string
-#          required: ["spec.entryClass", "spec.args", "spec.url"]
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              required:
+                - entryClass
+                - args
+              properties:
+                entryClass:
+                  type: string
+                args:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                package:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                tokens:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+
   names:
     kind: BeamService
     plural: beamservices
@@ -34,7 +44,7 @@ spec:
     shortNames:
       - bs
 ---
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: beamsqlstatementsets.oisp.org
@@ -44,7 +54,71 @@ spec:
   versions:
     - name: v1alpha1
       served: true
+      storage: false
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - sqlstatements
+                - tables
+              properties:
+                sqlstatements:
+                  type: array
+                  items:
+                    type: string
+                tables:
+                  type: array
+                  items:
+                    type: string
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                state:
+                  type: string
+                job_id:
+                  type: string
+    - name: v1alpha2
+      served: true
       storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - sqlstatements
+                - tables
+              properties:
+                sqlstatements:
+                  type: array
+                  items:
+                    type: string
+                tables:
+                  type: array
+                  items:
+                    type: string
+                views:
+                  type: array
+                  items:
+                    type: string
+                sqlsettings:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                state:
+                  type: string
+                job_id:
+                  type: string
   names:
     kind: BeamSqlStatementSet
     plural: beamsqlstatementsets
@@ -52,7 +126,7 @@ spec:
     shortNames:
       - bsqls
 ---
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: beamsqltables.oisp.org
@@ -62,10 +136,112 @@ spec:
   versions:
     - name: v1alpha1
       served: true
+      storage: false
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - connector
+                - fields
+                - kafka
+                - value
+              properties:
+                connector:
+                  type: string
+                  enum: [
+                    "kafka",
+                    "upsert-kafka"
+                  ]
+                fields:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                kafka:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                value:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                primaryKey:
+                  type: array
+                  items:
+                    type: string
+    - name: v1alpha2
+      served: true
       storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - name
+                - connector
+                - fields
+                - kafka
+                - value
+              properties:
+                connector:
+                  type: string
+                  enum: [
+                    "kafka",
+                    "upsert-kafka"
+                  ]
+                fields:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                kafka:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                value:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                primaryKey:
+                  type: array
+                  items:
+                    type: string
+                name:
+                  type: string
   names:
     kind: BeamSqlTable
     plural: beamsqltables
     singular: beamsqltable
     shortNames:
       - bsqlt
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: beamsqlviews.oisp.org
+spec:
+  scope: Namespaced
+  group: oisp.org
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - name
+                - sqlstatement
+              properties:
+                sqlstatement:
+                  type: string
+                name:
+                  type: string
+  names:
+    kind: BeamSqlView
+    plural: beamsqlviews
+    singular: beamsqlview
+    shortNames:
+      - bsqlv

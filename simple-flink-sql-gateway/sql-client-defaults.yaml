@@ -92,6 +92,9 @@ functions:
   - name: epoch2sql
     from: class
     class: info.oisp.Epoch2SQLTimestamp
+  - name: getJsonField
+    from: class
+    class: info.oisp.GetJsonField
 # A typical function definition looks like:
 # - name: ...
 #   from: class

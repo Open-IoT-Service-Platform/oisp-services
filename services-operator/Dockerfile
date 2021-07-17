@@ -6,7 +6,7 @@ ADD *.py /opt/
 ADD test/*.py /opt/test/
 RUN PYTHONPATH=/opt python3 -m pycodestyle /opt/*.py
 RUN PYTHONPATH=/opt python3 -m pylint --disable=fixme /opt/*.py
-RUN PYTHONPATH=/opt python3 /opt/test/test_*.py
+RUN PYTHONPATH=/opt python3 /opt/test/test_beamsqlstatementsetoperator.py && PYTHONPATH=/opt python3 /opt/test/test_tables_and_views.py
 
 FROM python:3.8
 RUN pip install kubernetes kopf==1.32.1 oisp
