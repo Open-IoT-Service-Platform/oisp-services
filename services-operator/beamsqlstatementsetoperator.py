@@ -209,7 +209,7 @@ def refresh_state(body, patch, logger):
     job_info = None
     try:
         job_info = flink_util.get_job_status(logger, job_id)
-    except requests.HTTPError as exc:
+    except requests.HTTPError:
         pass
     except requests.exceptions.RequestException as exc:
         patch.status[STATE] = States.UNKNOWN.name
