@@ -149,7 +149,7 @@ jobs:
           repo: "oisp-services"
       - setup-build-environment
       - pull-images-and-build-only-testbranch:
-          container: "services-server services-operator"
+          container: "services-server services-operator simple-flink-sql-gateway"
       - e2e-test
   build-check:
     executor: docker-executor
