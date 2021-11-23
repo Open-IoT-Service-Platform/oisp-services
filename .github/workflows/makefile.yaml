@@ -67,7 +67,7 @@ jobs:
         loops=0
         export DOCKER_TAG=test
         export USE_LOCAL_REGISTRY=true
-        until [ ${retval} -eq 0 ] || [ ${loop} -gt 3 ]; do
+        until [ ${retval} -eq 0 ] || [ ${loops} -gt 3 ]; do
           make undeploy-oisp
           (for i in {1..20}; do sleep 60; echo .; done&) &&  make deploy-oisp-test
           if [[ "<< parameters.upgrade-test >>" = "true" ]] && [[ -n "${CURRENT_RELEASE_VERSION}" ]];
@@ -76,9 +76,11 @@ jobs:
               kubectl -n $(NAMESPACE) scale deployment debugger --replicas=1
             fi
           make test
-          loop=$((loop+1))
           retval=$?
+          loops=$((loops+1))
         done
+        echo Test return value: ${retval}
+        exit ${retval}
     - name: debug with upterm
       if: failure()
       uses: lhotari/action-upterm@v1
