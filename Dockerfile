@@ -42,18 +42,7 @@ RUN cd metrics-aggregator && mvn checkstyle:check clean package -Pflink-runner -
         then  mvn package -Pflink-runner  -DskipTests -f pom-next.xml; \
     fi
 
-# Add and build component-splitter
-# --------------------------------
-ADD component-splitter/pom*.xml /app/component-splitter/
-ADD component-splitter/src /app/component-splitter/src
-ADD component-splitter/checkstyle/checkstyle.xml /app/component-splitter/checkstyle/checkstyle.xml
-RUN cd component-splitter && mvn clean package -Pflink-runner -DskipTests; \
-    if [ -f pom-next.xml ]; \
-        then  mvn package -Pflink-runner  -DskipTests -f pom-next.xml; \
-    fi
-
 FROM httpd:2.4
 
 COPY --from=rule-engine-builder /app/oisp-beam-rule-engine/target/rule-engine-bundled-*.jar /usr/local/apache2/htdocs/
 COPY --from=rule-engine-builder /app/metrics-aggregator/target/metrics-aggregator-bundled-*.jar /usr/local/apache2/htdocs/
-COPY --from=rule-engine-builder /app/component-splitter/target/component-splitter-bundled-*.jar /usr/local/apache2/htdocs/
