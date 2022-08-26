@@ -22,6 +22,7 @@ FLINK_SQL_GATEWAY = os.getenv("OISP_FLINK_SQL_GATEWAY",
 DEFAULT_SAVEPOINT_DIR = "/flink-savepoints"
 FLINK_SAVEPOINT_DIR = os.getenv("OISP_FLINK_SAVEPOINT_DIR",
                                 default=DEFAULT_SAVEPOINT_DIR)
+DEFAULT_TIMEOUT = 60
 
 timer_interval_seconds = int(os.getenv("TIMER_INTERVAL", default="10"))
 timer_backoff_seconds = int(os.getenv("TIMER_BACKOFF_INTERVAL", default="10"))
@@ -465,7 +466,8 @@ def deploy_statementset(statementset, logger):
     logger.debug(f"Deployment request to SQL Gateway {request}")
     try:
         response = requests.post(request,
-                                 json={"statement": statementset})
+                                 json={"statement": statementset},
+                                 timeout=DEFAULT_TIMEOUT)
     except requests.RequestException as err:
         raise DeploymentFailedException(
             f"Could not deploy job to {request}, server unreachable ({err})")\

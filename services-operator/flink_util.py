@@ -6,6 +6,7 @@ import requests
 namespace = os.getenv("OISP_NAMESPACE", default="oisp")
 FLINK_URL = os.getenv("OISP_FLINK_REST",
                       default=f"http://flink-jobmanager-rest.{namespace}:8081")
+DEFAULT_TIMEOUT = 60
 
 
 class CancelJobFailedException(Exception):
@@ -16,7 +17,8 @@ def get_job_status(logger, job_id):
     """Get job status as json dict as returned by Flink"""
     logger.debug(f"Requestion status for {job_id} from flink job-manager")
     job_response = requests.get(
-        f"{FLINK_URL}/jobs/{job_id}")
+        f"{FLINK_URL}/jobs/{job_id}",
+        timeout=DEFAULT_TIMEOUT)
     job_response.raise_for_status()
     job_response = job_response.json()
     return job_response
@@ -26,7 +28,9 @@ def cancel_job(logger, job_id):
     """Cancel job with given id."""
     logger.debug(
         f"Requesting cancelation of job {job_id} from flink job-manager")
-    response = requests.patch(f"{FLINK_URL}/jobs/{job_id}")
+    response = requests.patch(
+        f"{FLINK_URL}/jobs/{job_id}",
+        timeout=DEFAULT_TIMEOUT)
     if response.status_code != 202:
         raise CancelJobFailedException("Could not cancel job {job_id}")
 
@@ -41,7 +45,7 @@ def stop_job(logger, job_id, savepoint_dir):
         json = {"targetDirectory": f"{savepoint_dir}"}
     logger.info(f"sending object: {json}")
     job_response = requests.post(
-        f"{FLINK_URL}/jobs/{job_id}/stop", json=json)
+        f"{FLINK_URL}/jobs/{job_id}/stop", timeout=DEFAULT_TIMEOUT, json=json)
     job_response.raise_for_status()
     if job_response.status_code != 202:
         raise CancelJobFailedException("Could not trigger stop of job "
@@ -63,7 +67,8 @@ def get_savepoint_state(logger, job_id, savepoint_id):
     logger.debug(f"Check state of savepoint trigger {savepoint_id}"
                  " for job  {job_id} ")
     response = requests.get(
-        f"{FLINK_URL}/jobs/{job_id}/savepoints/{savepoint_id}")
+        f"{FLINK_URL}/jobs/{job_id}/savepoints/{savepoint_id}",
+        timeout=DEFAULT_TIMEOUT)
     try:
         response.raise_for_status()
     except requests.exceptions.HTTPError:
