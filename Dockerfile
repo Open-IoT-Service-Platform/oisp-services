@@ -31,18 +31,18 @@ RUN cd oisp-beam-rule-engine && mvn checkstyle:check pmd:check clean package -Pf
 # Add and build metrics-aggregator
 # --------------------------------
 
-ADD metrics-aggregator/pom*.xml /app/metrics-aggregator/
-RUN mkdir /app/metrics-aggregator/checkstyle
-ADD metrics-aggregator/checkstyle/checkstyle.xml /app/metrics-aggregator/checkstyle/checkstyle.xml
-ADD metrics-aggregator/src /app/metrics-aggregator/src
+# ADD metrics-aggregator/pom*.xml /app/metrics-aggregator/
+# RUN mkdir /app/metrics-aggregator/checkstyle
+# ADD metrics-aggregator/checkstyle/checkstyle.xml /app/metrics-aggregator/checkstyle/checkstyle.xml
+# ADD metrics-aggregator/src /app/metrics-aggregator/src
 
 
-RUN cd metrics-aggregator && mvn checkstyle:check clean package -Pflink-runner -DskipTests && \
-    if [ -f pom-next.xml ]; \
-        then  mvn package -Pflink-runner  -DskipTests -f pom-next.xml; \
-    fi
+# RUN cd metrics-aggregator && mvn checkstyle:check clean package -Pflink-runner -DskipTests && \
+#     if [ -f pom-next.xml ]; \
+#        then  mvn package -Pflink-runner  -DskipTests -f pom-next.xml; \
+#     fi
 
 FROM httpd:2.4
 
 COPY --from=rule-engine-builder /app/oisp-beam-rule-engine/target/rule-engine-bundled-*.jar /usr/local/apache2/htdocs/
-COPY --from=rule-engine-builder /app/metrics-aggregator/target/metrics-aggregator-bundled-*.jar /usr/local/apache2/htdocs/
+#COPY --from=rule-engine-builder /app/metrics-aggregator/target/metrics-aggregator-bundled-*.jar /usr/local/apache2/htdocs/
