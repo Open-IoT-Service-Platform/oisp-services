@@ -1,4 +1,6 @@
 # OISP Services
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FOpen-IoT-Service-Platform%2Foisp-services.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2FOpen-IoT-Service-Platform%2Foisp-services?ref=badge_shield)
+
 
 This repository contains official OISP Services. All functionality implemented here is experimental and due to change.
 **In this document, service is used in sense of a `microservice` and not a Kubernetes svc.**
@@ -59,3 +61,7 @@ kubectl get bs
 kubectl describe bs beam-service #or
 kubectl get bs beam-service -o yaml
 ```
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FOpen-IoT-Service-Platform%2Foisp-services.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FOpen-IoT-Service-Platform%2Foisp-services?ref=badge_large)
