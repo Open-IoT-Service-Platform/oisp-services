@@ -1,4 +1,5 @@
 # OISP Services
+# NOTE: This project reached end of support and is no longer maintained. Parts of the project are continued in https://github.com/IndustryFusion/DigitalTwin.
 
 This repository contains official OISP Services. All functionality implemented here is experimental and due to change.
 **In this document, service is used in sense of a `microservice` and not a Kubernetes svc.**
